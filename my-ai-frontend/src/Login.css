@@ -1,0 +1,128 @@
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #f7f7f7;
+  font-family: "Inter", sans-serif;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 36px;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 24px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.06);
+}
+
+.login-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  margin: 0 auto 20px;
+}
+
+.login-card h1 {
+  margin-bottom: 10px;
+  text-align: center;
+  font-size: 25px;
+  color: #111111;
+}
+
+.login-description {
+  margin-bottom: 28px;
+  text-align: center;
+  color: #666666;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.login-card label {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.login-card input {
+  width: 100%;
+  margin-bottom: 18px;
+  padding: 13px 14px;
+  border: 1px solid #dddddd;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #111111;
+  font: inherit;
+  font-size: 14px;
+}
+
+.login-card input:focus {
+  outline: 2px solid #aaaaaa;
+  outline-offset: 1px;
+}
+
+.login-card button {
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 12px;
+  background: #111111;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.login-card button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.login-error {
+  margin: 0 0 16px;
+  color: #c62828;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 26px 22px;
+  }
+}
+
+
+
+.auth-switch {
+  margin-top: 22px;
+  text-align: center;
+  font-size: 13px;
+  color: #666666;
+}
+
+.login-card .auth-link {
+  display: inline;
+  width: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #111111;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.signup-success {
+  margin-top: 16px;
+  color: #287a43;
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.5;
+}

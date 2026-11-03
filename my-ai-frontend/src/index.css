@@ -1,0 +1,49 @@
+/* Global reset — identical to the reference HTML design */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  font-family: "Inter", sans-serif;
+  color: #111111;
+  background: #ffffff;
+}
+
+html,
+#root {
+  width: 100%;
+  min-width: 320px;
+}
+
+body {
+  width: 100%;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow: hidden;
+  font-family: "Inter", sans-serif;
+  background: #ffffff;
+  color: #111111;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+button,
+textarea {
+  font-family: inherit;
+}
+
+button:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #777;
+  outline-offset: 3px;
+}
+
+@media (max-width: 700px) {
+  body {
+    overflow: auto;
+  }
+}

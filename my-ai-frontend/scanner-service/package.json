@@ -1,0 +1,17 @@
+{
+  "name": "my-ai-accessibility-scanner",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "axe-testing-library": "file:../axe-testing-library-main/axe-testing-library-main",
+    "express": "^4.21.2",
+    "fast-xml-parser": "^5.11.2",
+    "jszip": "^3.10.2",
+    "multer": "^1.4.5-lts.1",
+    "pdfjs-dist": "^6.4.299",
+    "playwright": "^1.51.0"
+  }
+}

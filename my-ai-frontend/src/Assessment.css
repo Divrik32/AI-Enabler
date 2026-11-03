@@ -1,0 +1,68 @@
+/* MY AI Assessment — original manual form styling */
+.assessment-form {
+  width: min(720px, 100%);
+  margin: auto;
+  padding: 24px;
+  text-align: left;
+  box-sizing: border-box;
+}
+.assessment-form h2 { font-size: 26px; margin: 0 0 8px; }
+.assessment-form > p { color: #777; font-size: 14px; margin: 0 0 24px; }
+.assessment-form form { display: flex; flex-direction: column; gap: 10px; }
+.assessment-form form > label { display: block; font-size: 13px; font-weight: 600; margin-top: 8px; }
+.assessment-form form > input,
+.assessment-form form > select,
+.assessment-form form > textarea {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  background: #fff;
+  color: #111;
+  font: inherit;
+  box-sizing: border-box;
+}
+.assessment-form textarea { resize: vertical; }
+.assessment-form form > input:focus,
+.assessment-form form > select:focus,
+.assessment-form form > textarea:focus { outline: none; border-color: #555; }
+.assessment-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; }
+.assessment-actions button { padding: 12px 18px; border-radius: 10px; cursor: pointer; font-weight: 600; }
+.assessment-cancel { background: #fff; color: #111; border: 1px solid #ddd; }
+.assessment-generate { background: #111; color: #fff; border: 1px solid #111; }
+
+/* Existing grade and question-type multiselect */
+.grade-multiselect { position: relative; width: 100%; }
+.grade-dropdown-trigger { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; color: #333; cursor: pointer; text-align: left; }
+.grade-dropdown-options { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20; max-height: 240px; overflow-y: auto; padding: 8px; background: #fff; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+.grade-checkbox-option { display: flex; align-items: center; gap: 10px; padding: 9px 10px; cursor: pointer; border-radius: 6px; }
+.grade-checkbox-option:hover { background: #f3f4f6; }
+.assessment-form .grade-checkbox-option input { width: 16px; height: 16px; margin: 0; flex-shrink: 0; }
+.selected-grades { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+.grade-tag { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; background: #f3f4f6; border-radius: 20px; font-size: 13px; }
+.grade-tag button { border: none; background: transparent; cursor: pointer; font-size: 16px; }
+.grade-clear { border: none; background: transparent; color: #555; cursor: pointer; text-decoration: underline; }
+.assessment-error { color: #b91c1c; font-size: 13px; }
+
+/* New two-card mode picker — separate from manual form */
+.assessment-selection { width: min(820px, 100%); margin: auto; padding: 24px; text-align: left; box-sizing: border-box; }
+.assessment-selection h2 { font-size: 26px; margin: 0 0 8px; }
+.assessment-selection > p { color: #777; font-size: 14px; margin: 0 0 24px; }
+.assessment-mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.assessment-mode-grid > button { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; min-height: 160px; padding: 22px; border: 1px solid #ddd; border-radius: 16px; background: #fff; color: #111; font: inherit; text-align: left; cursor: pointer; }
+.assessment-mode-grid > button:hover, .assessment-mode-grid > button:focus-visible { border-color: #111; background: #fafafa; }
+.assessment-mode-grid strong { font-size: 16px; }
+.assessment-mode-grid > button > span:last-child { color: #777; font-size: 13px; line-height: 1.5; }
+.assessment-mode-icon { font-size: 26px; }
+
+/* New PDF input — affects only PDF mode */
+.assessment-form input[type="file"] { border-style: dashed; background: #fafafa; }
+.assessment-form input[type="file"]::file-selector-button { margin-right: 12px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; background: #fff; cursor: pointer; }
+.assessment-file-name { font-size: 12px; color: #555; overflow-wrap: anywhere; }
+
+@media (max-width: 600px) {
+  .assessment-form, .assessment-selection { padding: 12px; }
+  .assessment-actions { flex-direction: column; }
+  .assessment-mode-grid { grid-template-columns: 1fr; }
+}
