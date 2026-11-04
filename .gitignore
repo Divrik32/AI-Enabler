@@ -31,3 +31,7 @@ coverage/
 .project
 .DS_Store
 *.log
+
+# Local backups and documents
+BKP/
+/Axe-Testing-Library_ Installation and Usage Guide.pdf

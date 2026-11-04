@@ -85,7 +85,9 @@ public class GroqAiService implements AiService {
                         "user",
                         request.getMessage()
                 )),
-                false
+                false,
+                8192,
+                "low"
         );
 
         for (int attempt = 0;
@@ -353,7 +355,13 @@ String visionPrompt = """
     private record GroqChatRequest(
             String model,
             List<GroqMessage> messages,
-            boolean stream
+            boolean stream,
+
+            @com.fasterxml.jackson.annotation.JsonProperty("max_completion_tokens")
+            Integer maxCompletionTokens,
+
+            @com.fasterxml.jackson.annotation.JsonProperty("reasoning_effort")
+            String reasoningEffort
     ) {}
 
     private record GroqMessage(

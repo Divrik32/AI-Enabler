@@ -91,379 +91,129 @@ const promptCards = [
 
 
 function AssessmentMarkdown({ content }) {
-
-  const lines = String(content || '')
-
-    .replace(/\r\n?/g, '\n')
-
-    .split('\n')
-
-
-
+  const lines = String(content || '').replace(/\r\n?/g, '\n').split('\n')
   const blocks = []
-
   let normalLines = []
-
-  let inQuestions = false
-
-  let inMatchingSection = false
-
   let i = 0
 
-
-
-  const clean = (value) =>
-
-  String(value || '')
-
+  const clean = (value) => String(value || '')
     .replace(/^\s{0,3}#{1,6}\s+/, '')
-
     .replace(/\*\*/g, '')
-
     .replace(/__/g, '')
-
     .trim()
 
+  const isHeading = (line) => /^\s{0,3}#{1,6}\s+/.test(line)
+  const isSection = (line) => /^Section\s+[A-Z]\s*[-–—:.]\s*/i.test(clean(line))
+  const isQuestion = (line) => /^\d+\.\s+\S/.test(clean(line))
+  const isColumnA = (line) => /^Column\s+A\s*:?$/i.test(clean(line))
+  const isColumnB = (line) => /^Column\s+B\s*:?$/i.test(clean(line))
+  const isBoundary = (line) =>
+    isHeading(line) || isSection(line) ||
+    /^(Answer Key|Scoring Guidelines)$/i.test(clean(line))
+  const isColumnItem = (line) =>
+    /^(?:\d+[.)]|[A-Za-z][.)])\s*\S/.test(clean(line))
 
-
-const isHeading = (line) =>
-
-  /^\s{0,3}#{1,6}\s+/.test(line)
-
-
-
-const isColumnA = (line) =>
-
-  /^Column\s+A\s\*:?\s\*$/i.test(clean(line))
-
-
-
-const isColumnB = (line) =>
-
-  /^Column\s+B\s\*:?\s\*$/i.test(clean(line))
-
-
-
-const isQuestion = (line) =>
-
-  /^\d+\.\s+\S/.test(clean(line))
-
-
-
-const isSection = (line) =>
-
-  /^Section\s+[A-Z]\s\*[-–—:.]\s\*/i.test(clean(line))
-
-
-
-  function flushNormal() {
-
+  const flushNormal = () => {
     if (normalLines.length) {
-
-      blocks.push({
-
-        type: 'markdown',
-
-        text: normalLines.join('\n')
-
-      })
-
+      blocks.push({ type: 'markdown', text: normalLines.join('\n') })
       normalLines = []
-
     }
-
   }
-
-
 
   while (i < lines.length) {
-
-    const line = lines[i]
-
-    const text = clean(line)
-
-
-
-    if (/^Questions$/i.test(text)) {
-
-      inQuestions = true
-
-      inMatchingSection = false
-
-    } else if (/^(Answer Key|Scoring Guidelines)$/i.test(text)) {
-
-      inQuestions = false
-
-      inMatchingSection = false
-
-    } else if (inQuestions && isSection(line)) {
-
-      inMatchingSection = /\bMatching\b/i.test(text)
-
-    } else if (inQuestions && /^Matching\b/i.test(text)) {
-
-      inMatchingSection = true
-
-    }
-
-
-
-    if (!inQuestions || !inMatchingSection || !isQuestion(line)) {
-
-      normalLines.push(line)
-
+    if (!isQuestion(lines[i])) {
+      normalLines.push(lines[i])
       i++
-
       continue
-
     }
 
-
-
-    // Find Column A after the question.
-
+    // A matching exercise is identified by its own Column A / Column B
+    // headings, not by the surrounding section's exact Markdown format.
     let aIndex = -1
-
     let bIndex = -1
-
     let j = i + 1
-
-
-
-    while (j < lines.length) {
-
+    while (j < lines.length && !isBoundary(lines[j]) && !isQuestion(lines[j])) {
       if (isColumnA(lines[j])) {
-
         aIndex = j
-
         break
-
       }
-
-
-
-      if (
-
-        isHeading(lines[j]) ||
-
-        isSection(lines[j]) ||
-
-        isQuestion(lines[j])
-
-      ) {
-
-        break
-
-      }
-
-
-
       j++
-
     }
-
-
-
-    if (aIndex === -1) {
-
-      normalLines.push(line)
-
-      i++
-
-      continue
-
-    }
-
-
-
-    // Numbered items inside Column A are NOT new questions.
-
-    j = aIndex + 1
-
-
-
-    while (j < lines.length) {
-
-      if (isColumnB(lines[j])) {
-
-        bIndex = j
-
-        break
-
+    if (aIndex !== -1) {
+      j = aIndex + 1
+      while (j < lines.length && !isBoundary(lines[j])) {
+        if (isColumnB(lines[j])) {
+          bIndex = j
+          break
+        }
+        j++
       }
-
-
-
-      if (isHeading(lines[j]) || isSection(lines[j])) {
-
-        break
-
-      }
-
-
-
-      j++
-
     }
-
-
 
     if (bIndex === -1) {
-
-      normalLines.push(line)
-
+      normalLines.push(lines[i])
       i++
-
       continue
-
     }
 
-
-
-    // Read Column B until the next question or section.
-
+    const expectedItems = lines.slice(aIndex + 1, bIndex)
+      .filter(isColumnItem).length
+    let itemsRead = 0
     let endIndex = bIndex + 1
-
-
-
     while (endIndex < lines.length) {
-
-      const current = lines[endIndex]
-
-
-
-      if (
-
-        isHeading(current) ||
-
-        isSection(current) ||
-
-        isQuestion(current)
-
-      ) {
-
-        break
-
-      }
-
-
-
+      const line = lines[endIndex]
+      if (isBoundary(line)) break
+      // A new question starts only after the expected Column B items.
+      if (isQuestion(line) && (expectedItems === 0 || itemsRead >= expectedItems)) break
+      if (isColumnItem(line)) itemsRead++
       endIndex++
-
     }
 
-
+    // If the output is malformed, retain it as Markdown rather than
+    // accidentally swallowing all following assessment questions.
+    if (expectedItems === 0 || itemsRead < expectedItems) {
+      normalLines.push(lines[i])
+      i++
+      continue
+    }
 
     flushNormal()
-
-
-
     blocks.push({
-
       type: 'matching',
-
       heading: lines.slice(i, aIndex).join('\n').trim(),
-
       columnA: lines.slice(aIndex, bIndex).join('\n').trim(),
-
       columnB: lines.slice(bIndex, endIndex).join('\n').trim()
-
     })
-
-
-
     i = endIndex
-
   }
-
-
-
   flushNormal()
 
-
-
   return (
-
     <div className="assessment-rendered">
-
-      {blocks.map((block, index) =>
-
-        block.type === 'matching' ? (
-
-          <div
-
-            key={index}
-
-            className="assessment-matching-question"
-
-          >
-
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-
-              {block.heading}
-
-            </ReactMarkdown>
-
-
-
-            <div className="assessment-matching-columns">
-
-              <div className="assessment-matching-column">
-
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-
-                  {block.columnA}
-
-                </ReactMarkdown>
-
-              </div>
-
-
-
-              <div className="assessment-matching-column">
-
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-
-                  {block.columnB}
-
-                </ReactMarkdown>
-
-              </div>
-
+      {blocks.map((block, index) => block.type === 'matching' ? (
+        <div key={index} className="assessment-matching-question">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.heading}</ReactMarkdown>
+          <div className="assessment-matching-columns" style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+            gap: '20px',
+            alignItems: 'start',
+            width: '100%'
+          }}>
+            <div className="assessment-matching-column">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.columnA}</ReactMarkdown>
             </div>
-
+            <div className="assessment-matching-column">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.columnB}</ReactMarkdown>
+            </div>
           </div>
-
-        ) : (
-
-          <ReactMarkdown
-
-            key={index}
-
-            remarkPlugins={[remarkGfm]}
-
-          >
-
-            {block.text}
-
-          </ReactMarkdown>
-
-        )
-
-      )}
-
+        </div>
+      ) : (
+        <ReactMarkdown key={index} remarkPlugins={[remarkGfm]}>{block.text}</ReactMarkdown>
+      ))}
     </div>
-
   )
-
 }
-
-
-
-
-
-
-
 
 
 function AssessmentRequestSummary({ content }) {
@@ -2619,49 +2369,6 @@ if (current.classList?.contains('assessment-matching-question')) {
 
 
     </html>
-
-
-
-
-
-.assessment-matching-columns {
-
-  display: grid !important;
-
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
-
-  gap: 16px !important;
-
-  align-items: start !important;
-
-  width: 100% !important;
-
-}
-
-
-
-.assessment-matching-column {
-
-  min-width: 0 !important;
-
-  overflow-wrap: anywhere;
-
-}
-
-
-
-.assessment-matching-question {
-
-  break-inside: avoid;
-
-  page-break-inside: avoid;
-
-}
-
-
-
-
-
   `)
 
 

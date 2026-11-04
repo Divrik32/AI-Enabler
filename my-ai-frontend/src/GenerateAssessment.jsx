@@ -184,6 +184,22 @@ MATCHING QUESTION RULES:
     Column B labels.
 40. Do not use Markdown tables for matching questions.
 
+41. For multiple Matching questions, vary the correct answer
+    mapping between questions.
+
+42. Do NOT repeatedly use the same mapping such as
+    1-B, 2-A for every Matching question.
+
+43. For 2-pair Matching questions, only two answer
+    permutations exist. Prefer 3 or more pairs per
+    Matching question whenever appropriate.
+
+44. Every Matching question must have a valid
+    one-to-one answer mapping.
+
+45. Verify that the Answer Key corresponds exactly
+    to the displayed Column B order.
+
 EXACT MATCHING FORMAT EXAMPLE:
 
 **3.** Match each addition problem with its sum.
