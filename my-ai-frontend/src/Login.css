@@ -126,3 +126,148 @@
   text-align: center;
   line-height: 1.5;
 }
+
+
+
+/* Password Show / Hide Eye Icon */
+
+.password-input-wrapper {
+  position: relative;
+  width: 100%;
+  margin-bottom: 18px;
+}
+
+.login-card .password-input-wrapper input {
+  width: 100%;
+  margin-bottom: 0;
+  padding-right: 48px;
+  box-sizing: border-box;
+}
+
+.login-card .password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 34px;
+  height: 34px;
+  padding: 0;
+
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #666666;
+  cursor: pointer;
+}
+
+.login-card .password-toggle:hover {
+  background: #f1f1f1;
+  color: #111111;
+}
+
+.login-card .password-toggle:focus-visible {
+  outline: 2px solid #555555;
+  outline-offset: 2px;
+}
+
+.login-card .password-toggle i {
+  font-size: 16px;
+}
+
+
+/* Forgot Password Link */
+
+.forgot-password-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: -4px 0 20px;
+}
+
+.login-card .forgot-password-row .auth-link {
+  display: inline;
+  width: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #111111;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.login-card .forgot-password-row .auth-link:hover {
+  color: #555555;
+}
+
+.login-card .forgot-password-row .auth-link:focus-visible {
+  outline: 2px solid #555555;
+  outline-offset: 3px;
+}
+
+
+
+/* Reset Password Checkbox */
+
+.reset-show-password {
+  margin-bottom: 20px;
+}
+
+.reset-show-password label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.login-card .reset-show-password input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  accent-color: #111111;
+}
+
+
+.selected-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.selected-files .file-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 180px;
+  position: relative;
+}
+
+.selected-image-preview {
+  width: 150px;
+  height: 110px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+}
+
+.selected-file-name {
+  max-width: 150px;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-files .file-chip button {
+  align-self: flex-end;
+}

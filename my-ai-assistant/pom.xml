@@ -140,6 +140,14 @@
     		<groupId>org.springframework.boot</groupId>
     		<artifactId>spring-boot-starter-jackson</artifactId>
 		</dependency>
+		
+		
+<!-- Spring Boot Mail - Forgot Password Email -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-mail</artifactId>
+</dependency>
+
 
     </dependencies>
 

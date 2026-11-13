@@ -7,6 +7,8 @@ function Signup({ onBackToLogin }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -95,26 +97,74 @@ function Signup({ onBackToLogin }) {
         />
 
         <label htmlFor="signup-password">Password</label>
-        <input
-          id="signup-password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Create a password"
-          autoComplete="new-password"
-          required
-        />
+
+        <div className="password-input-wrapper">
+          <input
+            id="signup-password"
+            type={showPassword ? 'text' : 'password'}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Create a password"
+            autoComplete="new-password"
+            required
+          />
+
+          <button
+            type="button"
+            className="password-toggle"
+            onClick={() => setShowPassword((current) => !current)}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            aria-pressed={showPassword}
+            title={showPassword ? 'Hide password' : 'Show password'}
+          >
+            <i
+              className={`fa-regular ${
+                showPassword ? 'fa-eye-slash' : 'fa-eye'
+              }`}
+              aria-hidden="true"
+            />
+          </button>
+        </div>
 
         <label htmlFor="signup-confirm">Confirm Password</label>
-        <input
-          id="signup-confirm"
-          type="password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          placeholder="Confirm your password"
-          autoComplete="new-password"
-          required
-        />
+
+        <div className="password-input-wrapper">
+          <input
+            id="signup-confirm"
+            type={showConfirmPassword ? 'text' : 'password'}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Confirm your password"
+            autoComplete="new-password"
+            required
+          />
+
+          <button
+            type="button"
+            className="password-toggle"
+            onClick={() =>
+              setShowConfirmPassword((current) => !current)
+            }
+            aria-label={
+              showConfirmPassword
+                ? 'Hide confirm password'
+                : 'Show confirm password'
+            }
+            aria-pressed={showConfirmPassword}
+            title={
+              showConfirmPassword
+                ? 'Hide confirm password'
+                : 'Show confirm password'
+            }
+          >
+            <i
+              className={`fa-regular ${
+                showConfirmPassword ? 'fa-eye-slash' : 'fa-eye'
+              }`}
+              aria-hidden="true"
+            />
+          </button>
+        </div>
 
         {error && (
           <p className="login-error" role="alert">

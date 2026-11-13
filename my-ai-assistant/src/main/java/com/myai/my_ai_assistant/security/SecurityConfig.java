@@ -20,91 +20,97 @@ import org.springframework.security.config.Customizer;
 @Configuration
 public class SecurityConfig {
 
-    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+	private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    public SecurityConfig(
-            JwtAuthenticationFilter jwtAuthenticationFilter) {
+	public SecurityConfig(
+			JwtAuthenticationFilter jwtAuthenticationFilter) {
 
-        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
-    }
+		this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+	}
 
-    @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http)
-            throws Exception {
+	@Bean
+	public SecurityFilterChain securityFilterChain(HttpSecurity http)
+			throws Exception {
 
-        http
-        .cors(Customizer.withDefaults())
-            .csrf(AbstractHttpConfigurer::disable)
+		http
+		.cors(Customizer.withDefaults())
+		.csrf(AbstractHttpConfigurer::disable)
 
-            .sessionManagement(session ->
-                session.sessionCreationPolicy(
-                    SessionCreationPolicy.STATELESS
-                )
-            )
+		.sessionManagement(session ->
+		session.sessionCreationPolicy(
+				SessionCreationPolicy.STATELESS
+				)
+				)
 
-            .authorizeHttpRequests(auth -> auth
+		.authorizeHttpRequests(auth -> auth
 
-            	    .dispatcherTypeMatchers(
-            	        DispatcherType.ERROR,
-            	        DispatcherType.FORWARD
-            	    ).permitAll()
+				.dispatcherTypeMatchers(
+						DispatcherType.ERROR,
+						DispatcherType.FORWARD
+						).permitAll()
 
-            	    .requestMatchers("/api/auth/login")
-            	    .permitAll()
 
-            	    .requestMatchers(HttpMethod.POST, "/api/users")
-            	    .permitAll()
+				.requestMatchers(
+						HttpMethod.POST,
+						"/api/auth/login",
+						"/api/auth/forgot-password",
+						"/api/auth/reset-password"
+						)
+				.permitAll()
 
-            	    .requestMatchers(HttpMethod.GET, "/api/users")
-            	    .authenticated()
+				.requestMatchers(HttpMethod.POST, "/api/users")
+				.permitAll()
 
-            	    .anyRequest()
-            	    .authenticated()
-            	)
+				.requestMatchers(HttpMethod.GET, "/api/users")
+				.authenticated()
 
-            // Return 401 when authentication is missing/invalid
-            .exceptionHandling(exception ->
-                exception.authenticationEntryPoint(
-                    (request, response, authException) -> {
+				.anyRequest()
+				.authenticated()
+				)
 
-                        response.setStatus(
-                            HttpStatus.UNAUTHORIZED.value()
-                        );
+		// Return 401 when authentication is missing/invalid
+		.exceptionHandling(exception ->
+		exception.authenticationEntryPoint(
+				(request, response, authException) -> {
 
-                        response.setContentType(
-                            "application/json"
-                        );
+					response.setStatus(
+							HttpStatus.UNAUTHORIZED.value()
+							);
 
-                        response.getWriter().write(
-                            "{\"status\":401,\"message\":\"Authentication required\"}"
-                        );
-                    }
-                )
-            )
+					response.setContentType(
+							"application/json"
+							);
 
-            .addFilterBefore(
-                jwtAuthenticationFilter,
-                UsernamePasswordAuthenticationFilter.class
-            );
+					response.getWriter().write(
+							"{\"status\":401,\"message\":\"Authentication required\"}"
+							);
+				}
+				)
+				)
 
-        return http.build();
-    }
-    
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(
-        	    "http://localhost:5173",
-        	    "https://enabler.wsdstech.com"
-        	));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
-        config.setExposedHeaders(List.of("Authorization"));
-        config.setAllowCredentials(true);
-        config.setMaxAge(3600L);
+		.addFilterBefore(
+				jwtAuthenticationFilter,
+				UsernamePasswordAuthenticationFilter.class
+				);
 
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
-        return source;
-    }
+		return http.build();
+	}
+
+	@Bean
+	public CorsConfigurationSource corsConfigurationSource() {
+		CorsConfiguration config = new CorsConfiguration();
+		config.setAllowedOrigins(List.of(
+				"http://localhost:5173",
+				"https://enabler.wsdstech.com"
+				));
+		config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
+		config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
+		config.setExposedHeaders(List.of("Authorization"));
+		config.setAllowCredentials(true);
+		config.setMaxAge(3600L);
+
+		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+		source.registerCorsConfiguration("/**", config);
+		return source;
+	}
 }

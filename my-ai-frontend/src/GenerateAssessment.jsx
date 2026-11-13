@@ -61,6 +61,8 @@ function GenerateAssessment({
   function handleSubmit(event) {
     event.preventDefault()
 
+    console.log('ASSESSMENT SUBMIT CLICKED')
+
     if (mode === 'pdf') {
       if (!documentFile) {
         setError('Please choose a PDF, DOC or DOCX file.')

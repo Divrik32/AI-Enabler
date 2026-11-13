@@ -248,6 +248,23 @@ String userQuestion = question == null || question.isBlank()
         ? "Describe this image in detail."
         : question.trim();
 
+boolean altTextRequested = Pattern.compile(
+        "(?i)\\b(?:alt[ -]?text|alternative text|image accessibility description)\\b"
+).matcher(userQuestion).find();
+
+String altTextInstructions = altTextRequested ? """
+        The user is requesting accessible image alt text.
+        - Describe the image's meaningful visible content and purpose.
+        - Prefer one concise sentence; use more detail only if requested.
+        - Avoid opening with "image of" or "picture of".
+        - Do not infer identities, sensitive traits, or unseen details.
+        - Preserve important visible text exactly when relevant and legible.
+        - Follow the user's requested language and level of detail.
+        - If the image is purely decorative in its stated context, suggest alt="".
+        - Return the proposed alt text directly, without unnecessary preamble.
+        - If purpose/context is unclear, describe what is visible without guessing.
+        """ : "";
+
 String visionPrompt = """
         You are an accurate image understanding assistant.
 
@@ -268,6 +285,7 @@ String visionPrompt = """
         10. Answer the user's actual question directly.
         11. Do not invent information that is not visible.
 
+        """ + altTextInstructions + """
         User question:
         """ + userQuestion;
 

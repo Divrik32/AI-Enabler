@@ -39,7 +39,7 @@ import Login from './Login'
 
 
 import Signup from './Signup'
-
+import ForgotPassword from './ForgotPassword'
 
 
 import GenerateAssessment from './GenerateAssessment'
@@ -49,6 +49,8 @@ import { downloadAssessmentDOCX } from './assessmentDocx'
 
 
 import AccessibilityScanner from './AccessibilityScanner'
+import ResetPassword from './ResetPassword'
+
 
 
 
@@ -326,9 +328,162 @@ function AssessmentRequestSummary({ content }) {
 
 
 
+function SelectedImagePreview({ file }) {
+  const [previewUrl, setPreviewUrl] = useState('')
+
+  useEffect(() => {
+    const url = URL.createObjectURL(file)
+    setPreviewUrl(url)
+
+    return () => URL.revokeObjectURL(url)
+  }, [file])
+
+  return previewUrl ? (
+    <img
+      src={previewUrl}
+      alt={`Preview of ${file.name}`}
+      className="selected-image-preview"
+    />
+  ) : null
+}
 
 
 
+
+// Image IDs are stored with the user message so history can load the exact image.
+const SAVED_IMAGE_MARKER = /^\[(?:Attached|Generated) image ID:\s*(\d+)\]\s*(?:\r?\n)?/
+
+function ChatImageThumbnail({
+  conversationId,
+  imageId,
+  token,
+  localFile,
+  isGenerated = false
+}) {
+  const [url, setUrl] = useState('')
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    if (!localFile && (!conversationId || !imageId || !token)) return
+    let cancelled = false
+    let objectUrl = ''
+    setUrl('')
+    setError(false)
+
+    async function loadImage() {
+      try {
+        if (localFile) {
+          objectUrl = URL.createObjectURL(localFile)
+        } else {
+          const response = await fetch(
+            `http://localhost:8080/api/conversations/${conversationId}/images/${imageId}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          )
+          if (!response.ok) throw new Error(`Image request failed (${response.status})`)
+          const blob = await response.blob()
+          objectUrl = URL.createObjectURL(blob)
+        }
+        if (cancelled) URL.revokeObjectURL(objectUrl)
+        else setUrl(objectUrl)
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Could not load chat image:', err)
+          setError(true)
+        }
+      }
+    }
+    loadImage()
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [conversationId, imageId, token, localFile])
+
+  if (error) return <span className="chat-image-error">Image unavailable</span>
+  if (!url) return <span className="chat-image-loading">Loading image...</span>
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" className="chat-image-link" aria-label="View uploaded image">
+      <img
+  src={url}
+  alt={isGenerated ? 'Generated image' : 'Uploaded image'}
+  className={
+    isGenerated
+      ? 'chat-image-generated'
+      : 'chat-image-thumbnail'
+  }
+/>
+    </a>
+  )
+}
+
+function UserChatMessage({ message, conversationId, token }) {
+  const rawContent = String(message.content || '')
+  const isGeneratedImage = /^\[Generated image ID:\s*\d+\]/.test(rawContent)
+  const match = rawContent.match(SAVED_IMAGE_MARKER)
+  const textContent = match ? rawContent.slice(match[0].length) : rawContent
+  const displayText = textContent.trim()
+  const hasImage = Boolean(match || message.pendingImageFile)
+  return (
+    <>
+      {hasImage && (
+        <ChatImageThumbnail
+
+        isGenerated={isGeneratedImage}
+          conversationId={conversationId}
+          imageId={match?.[1]}
+          token={token}
+          localFile={message.pendingImageFile}
+        />
+      )}
+     {displayText && <p>{displayText}</p>}
+    </>
+  )
+}
+
+// Detect explicit requests to generate a new image.
+// Ordinary questions about images should continue through normal chat.
+
+function isImageGenerationRequest(text) {
+  const prompt = String(text || '').trim()
+
+  if (!prompt) return false
+
+  return (
+    /^(?:please\s+)?(?:generate|create|draw|make|design)\b/i.test(prompt) ||
+    /^(?:please\s+)?(?:show|paint|illustrate)\s+(?:me\s+)?(?:an?\s+)?(?:image|picture|photo|illustration)\b/i.test(prompt)
+  )
+}
+
+
+// Keep the login active across refreshes in the same browser tab.
+// Session storage is cleared when the tab session ends; never store passwords.
+const AUTH_STORAGE_KEY = 'myai-auth-session'
+
+function isAuthSessionValid(session) {
+  if (!session || typeof session.token !== 'string' || !session.token.trim()) return false
+  try {
+    const payloadPart = session.token.split('.')[1]
+    if (!payloadPart) return false
+    const base64 = payloadPart.replace(/-/g, '+').replace(/_/g, '/')
+    const payload = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')))
+    return typeof payload.exp === 'number' && payload.exp * 1000 > Date.now()
+  } catch {
+    return false
+  }
+}
+
+function restoreAuthSession() {
+  try {
+    const stored = sessionStorage.getItem(AUTH_STORAGE_KEY)
+    if (!stored) return null
+    const session = JSON.parse(stored)
+    if (isAuthSessionValid(session)) return session
+    sessionStorage.removeItem(AUTH_STORAGE_KEY)
+  } catch (error) {
+    console.warn('Unable to restore login session:', error)
+  }
+  return null
+}
 
 function App() {
 
@@ -336,13 +491,41 @@ function App() {
 
   const [openChatMenuId, setOpenChatMenuId] = useState(null)
 
+  // Close the Recent Chats options menu on outside click or Escape.
+  useEffect(() => {
+    if (openChatMenuId === null) return
+
+    const handleOutsidePointerDown = (event) => {
+      if (!event.target.closest?.('.chat-menu-wrapper')) {
+        setOpenChatMenuId(null)
+      }
+    }
+
+    const handleMenuEscape = (event) => {
+      if (event.key === 'Escape') setOpenChatMenuId(null)
+    }
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown)
+    document.addEventListener('keydown', handleMenuEscape)
+
+    return () => {
+      document.removeEventListener('pointerdown', handleOutsidePointerDown)
+      document.removeEventListener('keydown', handleMenuEscape)
+    }
+  }, [openChatMenuId])
+
   const [chatModal, setChatModal] = useState(null)
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
 
 const [renameTitle, setRenameTitle] = useState('')
 
 
 
-  const [authPage, setAuthPage] = useState('login')
+  const [authPage, setAuthPage] = useState(() =>
+  window.location.pathname === '/reset-password'
+    ? 'reset-password'
+    : 'login'
+)
 
 
 
@@ -378,7 +561,7 @@ const [renameTitle, setRenameTitle] = useState('')
 
 
 
-  const [auth, setAuth] = useState(null)
+  const [auth, setAuth] = useState(restoreAuthSession)
 
 
 
@@ -387,6 +570,13 @@ const [renameTitle, setRenameTitle] = useState('')
   const [accessibilityView, setAccessibilityView] = useState(false)
 
   const [settingsView, setSettingsView] = useState(false)
+
+
+const [isEditingProfile, setIsEditingProfile] = useState(false)
+const [profileUsername, setProfileUsername] = useState('')
+const [profileEmail, setProfileEmail] = useState('')
+const [profileSaving, setProfileSaving] = useState(false)
+
 const [helpView, setHelpView] = useState(false)
 
   const [theme, setTheme] = useState(() => {
@@ -402,6 +592,90 @@ const [accessibilitySaving, setAccessibilitySaving] = useState(false)
 
 
   const [messages, setMessages] = useState([])
+
+  // Cloudflare generated image state
+const [generatedImage, setGeneratedImage] = useState(null)
+const [generatingImage, setGeneratingImage] = useState(false)
+const [imageGenerationError, setImageGenerationError] = useState('')
+
+const [writingJob, setWritingJob] = useState(null)
+
+const [writingParts, setWritingParts] = useState([])
+
+const [writingLoading, setWritingLoading] = useState(false)
+
+const [writingError, setWritingError] = useState('')
+
+
+useEffect(() => {
+  if (!auth?.token || !writingJob?.jobId || !activeConversationId) {
+    return
+  }
+
+  if (
+    writingJob.status === 'COMPLETED' ||
+    writingJob.status === 'PAUSED' ||
+    writingJob.status === 'FAILED'
+  ) {
+    return
+  }
+
+  let cancelled = false
+  let requestInProgress = false
+
+  const checkProgress = async () => {
+    if (cancelled || requestInProgress) return
+
+    requestInProgress = true
+
+    try {
+      const response = await fetch(
+        `http://localhost:8080/api/conversations/${activeConversationId}/writing/${writingJob.jobId}`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${auth.token}`,
+            Accept: 'application/json'
+          }
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(`Progress check failed (${response.status})`)
+      }
+
+      const updatedJob = await response.json()
+
+      if (!cancelled) {
+        setWritingJob(updatedJob)
+        setWritingError('')
+      }
+    } catch (error) {
+      if (!cancelled) {
+        console.error('Writing progress polling failed:', error)
+        setWritingError(error.message || 'Unable to check progress.')
+      }
+    } finally {
+      requestInProgress = false
+    }
+  }
+
+  checkProgress()
+
+  const intervalId = setInterval(checkProgress, 3000)
+
+  return () => {
+    cancelled = true
+    clearInterval(intervalId)
+  }
+}, [
+  auth?.token,
+  activeConversationId,
+  writingJob?.jobId,
+  writingJob?.status
+])
+
+
 
 
 
@@ -822,239 +1096,132 @@ async function handleAccessibilityScanComplete(scanData) {
 
 
 
+function handleEditProfile() {
+  setProfileUsername(auth?.username || '')
+  setProfileEmail(auth?.email || '')
+  setIsEditingProfile(true)
+}
 
-async function startNewChat() {
+function handleCancelProfileEdit() {
+  setIsEditingProfile(false)
+  setProfileUsername('')
+  setProfileEmail('')
+}
 
 
+async function handleSaveProfile(event) {
+  event?.preventDefault()
 
+  if (profileSaving) return
 
+  const username = profileUsername.trim()
+  const email = profileEmail.trim()
 
-  if (creatingConversation) return
-
-   setAccessibilityView(false)
-
-   setSettingsView(false)
-    setHelpView(false)
-
-   setSavedAccessibilityScan(null)
-
-
-
-setAssessmentView(null)
-
-
-
-
-
-
-
-  setCreatingConversation(true)
-
-
-
-  setNotice('Creating a new conversation...')
-
-
-
-
-
-
-
-  try {
-
-
-
-    const response = await fetch(
-
-
-
-      'http://localhost:8080/api/conversations',
-
-
-
-      {
-
-
-
-        method: 'POST',
-
-
-
-        headers: {
-
-
-
-          Authorization: `Bearer ${auth.token}`,
-
-
-
-          'Content-Type': 'application/json',
-
-
-
-        },
-
-
-
-        body: JSON.stringify({
-
-
-
-          title: 'New Chat',
-
-
-
-        }),
-
-
-
-      }
-
-
-
-    )
-
-
-
-
-
-
-
-    if (!response.ok) {
-
-
-
-      throw new Error(
-
-
-
-        `Failed to create conversation (${response.status})`
-
-
-
-      )
-
-
-
-    }
-
-
-
-
-
-
-
-    const conversation = await response.json()
-
-
-
-
-
-
-
-    // Add the new conversation to the sidebar.
-
-
-
-    setConversations((current) => [
-
-
-
-      conversation,
-
-
-
-      ...current,
-
-
-
-    ])
-
-
-
-
-
-
-
-    // Select the newly created conversation.
-
-
-
-    activeConversationIdRef.current = conversation.conversationId
-
-
-
-setActiveConversationId(conversation.conversationId)
-
-
-
-
-
-
-
-    // Clear the previous chat.
-
-
-
-    setMessages([])
-
-
-
-    setInput('')
-
-
-
-    setSelectedFiles([])
-
-    setImageFollowUpMode(false)
-
-
-
-
-
-
-
-    setNotice('New conversation created successfully.')
-
-
-
-  } catch (error) {
-
-
-
-    console.error('Error creating conversation:', error)
-
-
-
-    setNotice(error.message || 'Unable to create conversation.')
-
-
-
-  } finally {
-
-
-
-    setCreatingConversation(false)
-
-
-
+  if (!username || !email) {
+    setNotice('Username and email are required.')
+    return
   }
 
+  if (!auth?.token) {
+    setNotice('Session expired. Please log in again.')
+    return
+  }
+
+  setProfileSaving(true)
+  setNotice('')
+
+  try {
+    const response = await fetch(
+      'http://localhost:8080/api/auth/profile',
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${auth.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username, email })
+      }
+    )
+
+    const data = await response.json()
 
 
+    console.log('CONVERSATION MESSAGES:', data)
+
+    
+if (!response.ok) {
+  if (response.status === 409) {
+    throw new Error(
+      'Username or email already exists. Please choose another.'
+    )
+  }
+
+  throw new Error(
+    data.message ||
+    data.detail ||
+    `Profile update failed (${response.status})`
+  )
+}
+
+    if (!data.token || !data.username || !data.email) {
+      throw new Error('Incomplete profile response from server.')
+    }
+
+    const updatedAuth = {
+      ...auth,
+      token: data.token,
+      userId: data.userId,
+      username: data.username,
+      email: data.email
+    }
+
+    sessionStorage.setItem(
+      AUTH_STORAGE_KEY,
+      JSON.stringify(updatedAuth)
+    )
+
+    setAuth(updatedAuth)
+    setIsEditingProfile(false)
+    setProfileUsername('')
+    setProfileEmail('')
+    setNotice('Profile updated successfully.')
+  } catch (error) {
+    console.error('Profile update failed:', error)
+    setNotice(error.message || 'Unable to update profile.')
+  } finally {
+    setProfileSaving(false)
+  }
 }
 
 
 
+function startNewChat() {
+  // A conversation is created by sendMessage only when the first message is sent.
+  // Repeated clicks must not insert empty conversations into the database.
+  activeConversationIdRef.current = null
+  setActiveConversationId(null)
+  setMessages([])
+  // Clear generated image when starting a new chat
+setGeneratedImage(null)
+setGeneratingImage(false)
+setImageGenerationError('')
+  setInput('')
+  setSelectedFiles([])
+  setImageFollowUpMode(false)
+  setAccessibilityView(false)
+  setSavedAccessibilityScan(null)
+  setAssessmentView(null)
+  setSettingsView(false)
+  setHelpView(false)
+  setWritingJob(null)
+  setWritingParts([])
+  setWritingError('')
+  setMessagesLoading(false)
+  setNotice('')
+}
 
 
-
-
-
-
-
-
-  function choosePrompt(prompt) {
+function choosePrompt(prompt) {
 
 
 
@@ -2489,12 +2656,9 @@ if (!auth?.token) {
 
 
 
-  setSendingMessage(true)
-
-
-
-  setNotice('Generating assessment from document...')
-
+  setAssessmentView(null)
+setSendingMessage(true)
+setNotice('Generating assessment from document...')
 
 
 
@@ -2985,8 +3149,521 @@ setConversations(
 
 
 
+async function startWritingJob(topic, pages, conversationId) {
+  if (!auth?.token) {
+    setWritingError('Please log in again.')
+    return null
+  }
+
+  if (!conversationId) {
+    setWritingError('Please select a conversation.')
+    return null
+  }
+
+  setWritingLoading(true)
+  setWritingError('')
+
+  try {
+    const response = await fetch(
+      `http://localhost:8080/api/conversations/${conversationId}/writing`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${auth.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          topic: topic.trim(),
+          pages: Number(pages)
+        })
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error(
+        `Unable to start writing (${response.status})`
+      )
+    }
+
+    const job = await response.json()
+
+    setWritingJob(job)
+    setWritingParts([])
+
+    return job
+  } catch (error) {
+    console.error('Writing job creation failed:', error)
+    setWritingError(error.message || 'Unable to start writing.')
+    return null
+  } finally {
+    setWritingLoading(false)
+  }
+}
+
+
+async function fetchWritingProgress(conversationId, jobId) {
+  if (!auth?.token || !conversationId || !jobId) {
+    return null
+  }
+
+  try {
+    const response = await fetch(
+      `http://localhost:8080/api/conversations/${conversationId}/writing/${jobId}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${auth.token}`,
+          Accept: 'application/json'
+        }
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error(
+        `Unable to fetch writing progress (${response.status})`
+      )
+    }
+
+    const job = await response.json()
+
+    setWritingJob(job)
+    setWritingError('')
+
+    return job
+  } catch (error) {
+    console.error('Writing progress fetch failed:', error)
+    setWritingError(
+      error.message || 'Unable to fetch writing progress.'
+    )
+    return null
+  }
+}
+
+
+async function loadWritingHistory(conversationId) {
+  if (!auth?.token || !conversationId) return
+
+  try {
+    const response = await fetch(
+      `http://localhost:8080/api/conversations/${conversationId}/writing`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${auth.token}`,
+          Accept: 'application/json',
+        },
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error(
+        `Writing history load failed (${response.status})`
+      )
+    }
+
+    const jobs = await response.json()
+
+    // Ignore an outdated response after conversation switching.
+    if (
+      String(activeConversationIdRef.current) !==
+      String(conversationId)
+    ) {
+      return
+    }
+
+    const latestJob = Array.isArray(jobs) ? jobs[0] : null
+
+    setWritingJob(latestJob)
+    setWritingParts([])
+    setWritingError('')
+
+    if (!latestJob) return
+
+    // Load existing content even if generation was paused.
+    const partsResponse = await fetch(
+      `http://localhost:8080/api/conversations/${conversationId}/writing/${latestJob.jobId}/parts`,
+      {
+        headers: {
+          Authorization: `Bearer ${auth.token}`,
+          Accept: 'application/json',
+        },
+      }
+    )
+
+    if (!partsResponse.ok) {
+      throw new Error(
+        `Writing parts load failed (${partsResponse.status})`
+      )
+    }
+
+    const parts = await partsResponse.json()
+
+    if (
+      String(activeConversationIdRef.current) ===
+      String(conversationId)
+    ) {
+      setWritingParts(
+        Array.isArray(parts)
+          ? [...parts].sort(
+              (a, b) => a.partNumber - b.partNumber
+            )
+          : []
+      )
+    }
+  } catch (error) {
+    if (
+      String(activeConversationIdRef.current) ===
+      String(conversationId)
+    ) {
+      console.error('Writing history error:', error)
+      setWritingError(
+        error.message || 'Unable to restore writing.'
+      )
+    }
+  }
+}
+
+
+
+async function fetchWritingParts(conversationId, jobId) {
+  if (!auth?.token || !conversationId || !jobId) {
+    return []
+  }
+
+  try {
+    const response = await fetch(
+      `http://localhost:8080/api/conversations/${conversationId}/writing/${jobId}/parts`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${auth.token}`,
+          Accept: 'application/json'
+        }
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error(
+        `Unable to fetch writing content (${response.status})`
+      )
+    }
+
+    const parts = await response.json()
+
+    const sortedParts = Array.isArray(parts)
+      ? [...parts].sort(
+          (a, b) => a.partNumber - b.partNumber
+        )
+      : []
+
+    setWritingParts(sortedParts)
+    setWritingError('')
+
+    return sortedParts
+  } catch (error) {
+    console.error('Writing content fetch failed:', error)
+
+    setWritingError(
+      error.message || 'Unable to load writing content.'
+    )
+
+    return []
+  }
+}
+
+
+
+
+
+useEffect(() => {
+  if (!auth?.token || !activeConversationId || !writingJob?.jobId) {
+    return
+  }
+
+  if (writingJob.status !== 'COMPLETED') {
+    return
+  }
+
+  const conversationId = activeConversationId
+  const jobId = writingJob.jobId
+  let cancelled = false
+
+  async function loadCompletedWriting() {
+    try {
+      const response = await fetch(
+        `http://localhost:8080/api/conversations/${conversationId}/writing/${jobId}/parts`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${auth.token}`,
+            Accept: 'application/json'
+          }
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(
+          `Unable to load generated writing (${response.status})`
+        )
+      }
+
+      const data = await response.json()
+
+      if (!cancelled) {
+        const sortedParts = Array.isArray(data)
+          ? [...data].sort((a, b) => a.partNumber - b.partNumber)
+          : []
+
+        setWritingParts(sortedParts)
+        setWritingError('')
+      }
+    } catch (error) {
+      if (!cancelled) {
+        console.error('Completed writing load failed:', error)
+        setWritingError(
+          error.message || 'Unable to load generated writing.'
+        )
+      }
+    }
+  }
+
+  loadCompletedWriting()
+
+  return () => {
+    cancelled = true
+  }
+}, [
+  auth?.token,
+  activeConversationId,
+  writingJob?.jobId,
+  writingJob?.status
+])
+
+async function generateCloudflareImage(prompt) {
+  if (!auth?.token) {
+    throw new Error('Please log in again.')
+  }
+
+  const cleanPrompt = String(prompt || '').trim()
+
+  if (!cleanPrompt) {
+    throw new Error('Please enter an image description.')
+  }
+
+  const response = await fetch(
+    'http://localhost:8080/api/images/generate',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${auth.token}`,
+        'Content-Type': 'application/json',
+        Accept: 'image/png'
+      },
+      body: JSON.stringify({
+        prompt: cleanPrompt
+      })
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      `Image generation failed (${response.status})`
+    )
+  }
+
+  const imageBlob = await response.blob()
+
+  if (!imageBlob.size || imageBlob.type !== 'image/png') {
+    throw new Error('Server returned an invalid PNG image.')
+  }
+
+  return imageBlob
+}
+
+
+async function saveGeneratedImage(
+  conversationId,
+  imageBlob,
+  prompt
+) {
+  if (!conversationId) {
+    throw new Error('Conversation ID is missing.')
+  }
+
+  if (!imageBlob || !imageBlob.size) {
+    throw new Error('Generated image is empty.')
+  }
+
+  if (imageBlob.size > 4 * 1024 * 1024) {
+    throw new Error(
+      'Generated image exceeds the 4 MB storage limit.'
+    )
+  }
+
+  const formData = new FormData()
+
+  const imageFile = new File(
+    [imageBlob],
+    'generated-image.png',
+    { type: 'image/png' }
+  )
+
+  formData.append('file', imageFile)
+  formData.append('prompt', prompt)
+
+  const response = await fetch(
+    `http://localhost:8080/api/conversations/${conversationId}/images/generated`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${auth.token}`
+      },
+      body: formData
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+
+    throw new Error(
+      errorText || `Image save failed (${response.status})`
+    )
+  }
+
+  return await response.json()
+}
+
 async function sendMessage(event, assessmentPrompt = null) {
 
+  event?.preventDefault?.()
+
+if (generatingImage || sendingMessage) {
+  return
+}
+
+
+  const imagePrompt = String(assessmentPrompt ?? input ?? '').trim()
+
+if (
+  assessmentPrompt === null &&
+  isImageGenerationRequest(imagePrompt) &&
+  selectedFiles.length === 0
+) {
+  // Development mode: no Cloudflare API calls.
+  const IMAGE_MOCK_MODE = false
+
+  setImageGenerationError('')
+
+
+  
+ setInput('')
+setGeneratingImage(true)
+
+try {
+  if (IMAGE_MOCK_MODE) {
+  setGeneratedImage({
+    url: null,
+    prompt: imagePrompt,
+    isMock: true
+  })
+
+  setInput('')
+  setNotice('Image generation preview ready (mock mode).')
+  return
+}
+
+let conversationId = activeConversationIdRef.current
+
+if (!conversationId) {
+  const createResponse = await fetch(
+    'http://localhost:8080/api/conversations',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${auth.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ title: 'New Chat' })
+    }
+  )
+
+  if (!createResponse.ok) {
+    throw new Error('Unable to create conversation.')
+  }
+
+  const conversation = await createResponse.json()
+
+  conversationId = conversation.conversationId
+
+  activeConversationIdRef.current = conversationId
+  setActiveConversationId(conversationId)
+  setConversations(current => [conversation, ...current])
+  setImageFollowUpMode(false)
+}
+
+const imageBlob = await generateCloudflareImage(imagePrompt)
+
+const savedMessage = await saveGeneratedImage(
+  conversationId,
+  imageBlob,
+  imagePrompt
+)
+
+console.log('Generated Image Saved Response:', savedMessage)
+
+
+const checkResponse = await fetch(
+  `http://localhost:8080/api/conversations/${conversationId}/messages`,
+  {
+    headers: {
+      Authorization: `Bearer ${auth.token}`,
+      Accept: 'application/json'
+    }
+  }
+)
+
+if (checkResponse.ok) {
+  const savedMessages = await checkResponse.json()
+  console.log('IMAGE CHAT HISTORY:', savedMessages)
+}
+
+
+const imageUrl = URL.createObjectURL(imageBlob)
+
+setGeneratedImage({
+  url: imageUrl,
+  prompt: imagePrompt,
+  isMock: false
+})
+
+await openConversation(conversationId)
+const conversationsResponse = await fetch(
+  'http://localhost:8080/api/conversations',
+  {
+    headers: {
+      Authorization: `Bearer ${auth.token}`
+    }
+  }
+)
+
+if (conversationsResponse.ok) {
+  const updatedConversations = await conversationsResponse.json()
+  setConversations(updatedConversations)
+}
+
+setInput('')
+setNotice('')
+  } catch (error) {
+    console.error('Image generation failed:', error)
+    setImageGenerationError(
+      error.message || 'Unable to generate image.'
+    )
+  } finally {
+    setGeneratingImage(false)
+  }
+
+  return
+}
 
 
 
@@ -3010,6 +3687,8 @@ async function sendMessage(event, assessmentPrompt = null) {
 
 
   ).trim()
+
+  const filesToSend = [...selectedFiles]
 
 
 
@@ -3079,17 +3758,12 @@ async function sendMessage(event, assessmentPrompt = null) {
 
 setMessages(current => [
   ...current,
-  { id: `pending-${Date.now()}`, role: 'user', content }
+  { id: `pending-${Date.now()}`, role: 'user', content, pendingImageFile: filesToSend.length === 1 && /\.(jpg|jpeg|png|webp)$/i.test(filesToSend[0].name) ? filesToSend[0] : null }
 ])
 
 setSendingMessage(true)
-
-
-
 setInput('')
-
-
-
+setSelectedFiles([])
 setNotice('')
 
 
@@ -3248,6 +3922,86 @@ try {
 
 
 
+    // Detect explicit long-form writing requests.
+    const writingMatch = filesToSend.length === 0
+      ? content.match(
+          /^(?:please\s+)?(?:write|create|generate|draft)\s+(?:me\s+)?(?:a\s+|an\s+)?(\d{1,3})[\s-]+pages?\s+(?:book|document|article|report|essay|guide|story|content)?\s*(?:about|on|regarding|of)?\s*(.+)$/i
+        )
+      : null
+
+    if (writingMatch) {
+      const pages = Number(writingMatch[1])
+      const topic = writingMatch[2].trim()
+
+      if (pages < 1 || pages > 500) {
+        throw new Error('Please request between 1 and 500 pages.')
+      }
+
+      if (!topic) {
+        throw new Error('Please provide a writing topic.')
+      }
+
+      const job = await startWritingJob(
+        topic,
+        pages,
+        conversationId
+      )
+
+      
+if (!job) {
+  throw new Error('Unable to start long-form writing.')
+}
+
+// Update the title of a writing-only conversation.
+const currentConversation = conversations.find(
+  (item) =>
+    String(item.conversationId) === String(conversationId)
+)
+
+if (
+  !currentConversation ||
+  currentConversation.title === 'New Chat'
+) {
+  const title = `Writing - ${topic}`.slice(0, 200)
+
+  try {
+    const titleResponse = await fetch(
+      `http://localhost:8080/api/conversations/${conversationId}`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${auth.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title }),
+      }
+    )
+
+    if (!titleResponse.ok) {
+      throw new Error(
+        `Title update failed (${titleResponse.status})`
+      )
+    }
+
+    setConversations((current) =>
+      current.map((item) =>
+        String(item.conversationId) === String(conversationId)
+          ? { ...item, title }
+          : item
+      )
+    )
+  } catch (error) {
+    console.error('Writing title update failed:', error)
+    setNotice('Writing started, but title could not be updated.')
+    return
+  }
+}
+
+setNotice('')
+return
+
+    }
+
 
 
   // try {
@@ -3258,19 +4012,19 @@ try {
 
 const isImageUpload =
 
-  selectedFiles.length === 1 &&
+  filesToSend.length === 1 &&
 
-  /\.(jpg|jpeg|png|webp)$/i.test(selectedFiles[0].name)
+  /\.(jpg|jpeg|png|webp)$/i.test(filesToSend[0].name)
 
 
 
 const isDocumentUpload =
 
-  selectedFiles.length > 0 && !isImageUpload
+  filesToSend.length > 0 && !isImageUpload
 
   console.log('Enablr AI Upload Debug:', {
 
-  selectedFiles: selectedFiles.map(file => ({
+  filesToSend: filesToSend.map(file => ({
 
     name: file.name,
 
@@ -3288,7 +4042,7 @@ const isDocumentUpload =
 
 
 
-if (isDocumentUpload && selectedFiles.length !== 1) {
+if (isDocumentUpload && filesToSend.length !== 1) {
 
   throw new Error('Please attach only one document at a time.')
 
@@ -3300,7 +4054,7 @@ if (
 
   isDocumentUpload &&
 
-  !/\.(pdf|docx|txt|csv)$/i.test(selectedFiles[0].name)
+  !/\.(pdf|docx|txt|csv)$/i.test(filesToSend[0].name)
 
 ) {
 
@@ -3308,7 +4062,7 @@ if (
 
 }
 
-if (isImageUpload && selectedFiles[0].size > 4 * 1024 * 1024) {
+if (isImageUpload && filesToSend[0].size > 4 * 1024 * 1024) {
 
   throw new Error('Image must not exceed 4 MB.')
 
@@ -3326,7 +4080,7 @@ if (isImageUpload) {
 
 
 
-  formData.append('file', selectedFiles[0])
+  formData.append('file', filesToSend[0])
 
   formData.append('question', content)
 
@@ -3358,7 +4112,7 @@ if (isImageUpload) {
 
 
 
-  formData.append('file', selectedFiles[0])
+  formData.append('file', filesToSend[0])
 
   formData.append('question', content)
 
@@ -3686,6 +4440,81 @@ if (activeConversationIdRef.current === conversationId) {
 
 
 
+  async function copyChatMessage(message) {
+    const text = String(message.content || '').replace(SAVED_IMAGE_MARKER, '').trim()
+    if (!text) {
+      setNotice('This message has no text to copy.')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      setNotice('Message copied to clipboard.')
+    } catch (error) {
+      console.error('Copy message failed:', error)
+      setNotice('Could not copy message. Please allow clipboard access.')
+    }
+  }
+
+  function handleChatPaste(event) {
+    const clipboardItems = Array.from(event.clipboardData?.items || [])
+    const imageItem = clipboardItems.find(
+      (item) => item.kind === 'file' && /^image\/(png|jpeg|webp)$/i.test(item.type)
+    )
+
+    // Keep normal text copy/paste working as usual.
+    if (!imageItem) return
+
+    event.preventDefault()
+    const image = imageItem.getAsFile()
+    if (!image) {
+      setNotice('Unable to read the pasted image. Please try again.')
+      return
+    }
+    if (image.size > 4 * 1024 * 1024) {
+      setNotice('Image must not exceed 4 MB.')
+      return
+    }
+
+    // The existing image-question API supports one image per request.
+    const extension = image.type === 'image/jpeg' ? 'jpg' :
+      image.type === 'image/webp' ? 'webp' : 'png'
+    const pastedFile = new File([image], `pasted-image-${Date.now()}.${extension}`, {
+      type: image.type,
+      lastModified: Date.now()
+    })
+    setSelectedFiles([pastedFile])
+    setImageFollowUpMode(false)
+    setNotice('Image pasted. Add a question and press Send.')
+  }
+
+  function handleChatDragOver(event) {
+    // Allow files to be dropped into the chat composer instead of opening in the browser.
+    if (Array.from(event.dataTransfer?.types || []).includes('Files')) {
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
+    }
+  }
+
+  function handleChatDrop(event) {
+    event.preventDefault()
+    const files = Array.from(event.dataTransfer?.files || [])
+    if (!files.length) return
+
+    // Image questions currently support exactly one image, up to 4 MB.
+    if (files.length !== 1 || !/\.(png|jpe?g|webp)$/i.test(files[0].name)) {
+      setNotice('Drop one PNG, JPG or WebP image at a time.')
+      return
+    }
+    if (files[0].size > 4 * 1024 * 1024) {
+      setNotice('Image must not exceed 4 MB.')
+      return
+    }
+
+    setSelectedFiles([files[0]])
+    setImageFollowUpMode(false)
+    setNotice('Image attached. Add a question and press Send.')
+  }
+
   function handleFiles(event) {
 
 
@@ -3878,114 +4707,66 @@ if (activeConversationIdRef.current === conversationId) {
 
 
 
-  if (!auth) {
+ 
+if (!auth) {
 
-
-
-  if (authPage === 'signup') {
-
-
-
-    return (
-
-
-
-      <Signup
-
-
-
-        onBackToLogin={(success) => {
-
-
-
-          setSignupSuccess(success)
-
-
-
-          setAuthPage('login')
-
-
-
-        }}
-
-
-
-      />
-
-
-
-    )
-
-
-
-  }
-
-
-
-
-
-
-
+if (authPage === 'reset-password') {
   return (
-
-
-
-    <Login
-
-
-
-      onLogin={(data) => {
-
-
-
-  setAssessmentView(null)
-
-
-
-  setAuth(data)
-
-
-
-}}
-
-
-
-      onSignup={() => {
-
-
-
-        setSignupSuccess(false)
-
-
-
-        setAuthPage('signup')
-
-
-
+    <ResetPassword
+      onBackToLogin={() => {
+        window.history.replaceState({}, '', '/')
+        setAuthPage('login')
       }}
-
-
-
-      signupSuccess={signupSuccess}
-
-
-
     />
-
-
-
   )
-
-
-
 }
 
+  if (authPage === 'signup') {
+    return (
+      <Signup
+        onBackToLogin={(success) => {
+          setSignupSuccess(success)
+          setAuthPage('login')
+        }}
+      />
+    )
+  }
 
+  if (authPage === 'forgot-password') {
+    return (
+      <ForgotPassword
+        onBackToLogin={() => {
+          setAuthPage('login')
+        }}
+      />
+    )
+  }
 
-
-
-
-
+  return (
+    <Login
+      onLogin={(data) => {
+        setAssessmentView(null)
+        if (isAuthSessionValid(data)) {
+          try {
+            sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data))
+          } catch (error) {
+            console.warn('Unable to save login session:', error)
+          }
+        }
+        setAuth(data)
+      }}
+      onSignup={() => {
+        setSignupSuccess(false)
+        setAuthPage('signup')
+      }}
+      onForgotPassword={() => {
+        setSignupSuccess(false)
+        setAuthPage('forgot-password')
+      }}
+      signupSuccess={signupSuccess}
+    />
+  )
+}
 
 
 async function openAccessibilityConversation(conversationId) {
@@ -4075,8 +4856,10 @@ async function openAccessibilityConversation(conversationId) {
 
 async function openConversation(conversationId) {
 
-  setSettingsView(false)
-    setHelpView(false)
+  setGeneratedImage(null)
+setGeneratingImage(false)
+setImageGenerationError('')
+
 
    setAccessibilityView(false)
 
@@ -4089,6 +4872,11 @@ setAssessmentView(null)
 
 
   setActiveConversationId(conversationId)
+  setWritingJob(null)
+setWritingParts([])
+setWritingError('')
+
+void loadWritingHistory(conversationId)
 
 
 
@@ -4111,6 +4899,7 @@ setAssessmentView(null)
   try {
 
 
+  
 
     const response = await fetch(
 
@@ -4182,6 +4971,8 @@ setAssessmentView(null)
 
     const data = await response.json()
 
+  
+
 
 
 const imageCheckResponse = await fetch(
@@ -4230,7 +5021,15 @@ if (activeConversationIdRef.current !== conversationId) {
 
 
 
-setImageFollowUpMode(hasSavedImage === true)
+const hasUploadedImage = data.some(
+  (message) =>
+    String(message.role).toUpperCase() === 'USER' &&
+    /^\[Attached image ID:\s*\d+\]/.test(
+      String(message.content || '')
+    )
+)
+
+setImageFollowUpMode(hasUploadedImage)
 
 
 
@@ -4254,37 +5053,18 @@ setImageFollowUpMode(hasSavedImage === true)
 
     }
 
-
-
-
-
-
-
-    setMessages(
-
-
-
-      data.map((message) => ({
-
-
-
-        id: message.messageId,
-
-
-
-        role: message.role,
-
-
-
-        content: message.content,
-
-
-
-      }))
-
-
-
+    
+setMessages(
+  data.map((message) => ({
+    id: message.messageId,
+    role: /^\[Generated image ID:\s*\d+\]/.test(
+      String(message.content || '')
     )
+      ? 'assistant'
+      : message.role,
+    content: message.content,
+  }))
+)
 
 
 
@@ -4707,6 +5487,9 @@ setChatModal(null)
 
 
   function handleLogout() {
+    setLogoutConfirmOpen(false)
+    // Reset the Settings screen before the next login.
+    setSettingsView(false)
     setHelpView(false)
 
 
@@ -4725,6 +5508,11 @@ setSavedAccessibilityScan(null)
 
 
 
+    try {
+      sessionStorage.removeItem(AUTH_STORAGE_KEY)
+    } catch (error) {
+      console.warn('Unable to clear login session:', error)
+    }
     setAuth(null)
 
 
@@ -4778,6 +5566,37 @@ setSavedAccessibilityScan(null)
     <div className="app-frame">
 
 
+
+      {logoutConfirmOpen && (
+        <div className="chat-modal-overlay">
+          <div
+            className="chat-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="logout-modal-title"
+          >
+            <h2 id="logout-modal-title">Confirm Logout</h2>
+            <p>Are you sure you want to log out?</p>
+            <div className="chat-modal-actions">
+              <button
+                type="button"
+                className="chat-modal-cancel"
+                onClick={() => setLogoutConfirmOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="chat-modal-confirm"
+                onClick={handleLogout}
+                autoFocus
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {chatModal && (
 
@@ -5510,7 +6329,7 @@ onClick={() => {
 
 
 
-  onClick={handleLogout}
+  onClick={() => setLogoutConfirmOpen(true)}
 
 
 
@@ -5554,15 +6373,9 @@ onClick={() => {
 
 
 
-          <div className="model">
-
-
-
-         Enablr AI <i className="fa-solid fa-chevron-down" aria-hidden="true" />
-
-
-
-          </div>
+         <div className="model">
+  Enablr AI
+</div>
 
 
 
@@ -5669,35 +6482,85 @@ onClick={() => {
 
 
 
-    <section className="settings-section">
+    
+<section className="settings-section">
 
-      <h2>Profile Information</h2>
+  <h2>Profile Information</h2>
 
-
-
+  {!isEditingProfile ? (
+    <>
       <div className="settings-detail">
-
         <span>Username</span>
-
         <strong>{auth.username}</strong>
-
       </div>
-
-
 
       <div className="settings-detail">
-
         <span>Email Address</span>
-
         <strong>{auth.email}</strong>
-
-
-
-
-
       </div>
 
-    </section>
+      <button
+        type="button"
+        onClick={handleEditProfile}
+        className="settings-profile-button"
+      >
+        Edit Profile
+      </button>
+    </>
+  ) : (
+    <form onSubmit={handleSaveProfile} className="settings-profile-form">
+
+      <label htmlFor="profile-username">
+        Username
+      </label>
+
+      <input
+        id="profile-username"
+        type="text"
+        value={profileUsername}
+        onChange={(event) => setProfileUsername(event.target.value)}
+        maxLength={100}
+        required
+        disabled={profileSaving}
+      />
+
+      <label htmlFor="profile-email">
+        Email Address
+      </label>
+
+      <input
+        id="profile-email"
+        type="email"
+        value={profileEmail}
+        onChange={(event) => setProfileEmail(event.target.value)}
+        required
+        disabled={profileSaving}
+      />
+
+      <div className="settings-profile-actions">
+        <button
+          type="submit"
+          className="settings-profile-button"
+          disabled={profileSaving}
+        >
+          {profileSaving ? 'Saving...' : 'Save Changes'}
+        </button>
+
+        <button
+          type="button"
+          className="settings-profile-cancel"
+          onClick={handleCancelProfileEdit}
+          disabled={profileSaving}
+        >
+          Cancel
+        </button>
+      </div>
+
+    </form>
+  )}
+
+</section>
+
 
 
 
@@ -5751,7 +6614,7 @@ onClick={() => {
 
         className="settings-logout"
 
-        onClick={handleLogout}
+        onClick={() => setLogoutConfirmOpen(true)}
 
       >
 
@@ -5867,6 +6730,7 @@ onClick={() => {
 
 
   onBack={() => setAssessmentView(null)}
+  
 
 
 
@@ -5878,7 +6742,7 @@ onClick={() => {
 
 
 
-  ) : messages.length === 0 && !sendingMessage ? (
+  ) : messages.length === 0 && !sendingMessage && !generatingImage && !writingJob ? (
 
 
 
@@ -6040,175 +6904,149 @@ onClick={() => {
 
 
 
+
 <div className="message-list" aria-live="polite">
-
-
-
   {messages.map((message) => (
-
-
-
     <article
-
-
-
       className={`message-row ${message.role?.toLowerCase()}`}
-
-
-
       key={message.id}
-
-
-
     >
-
-
-
       <div className="message-label">
-
-
-
         {message.role?.toLowerCase() === 'user' ? 'You' : 'Enablr AI'}
-
-
-
       </div>
 
+      <div className="message-content">
+        {message.role?.toLowerCase() === 'user' ? (
+          String(message.content || '').includes(
+            'Create ONE combined educational or skills assessment.'
+          ) ? (
+            <AssessmentRequestSummary content={message.content} />
+          ) : (
+            <UserChatMessage
+              message={message}
+              conversationId={activeConversationId}
+              token={auth?.token}
+            />
+          )
+        ) : (
+          <>
+            {String(message.content || '').startsWith('[Generated image ID:') ? (
+              <UserChatMessage
+                message={message}
+                conversationId={activeConversationId}
+                token={auth?.token}
+              />
+            ) : (
+              <div id={`assessment-message-${message.id}`}>
+                <AssessmentMarkdown content={message.content} />
+              </div>
+            )}
 
+            {String(message.content || '').includes('Assessment Overview') && (
+              <div className="assessment-download-actions">
+                <button
+                  type="button"
+                  className="assessment-pdf-button"
+                  onClick={() => downloadAssessmentPDF(message.id)}
+                >
+                  Download PDF
+                </button>
 
-
-
-
-
-
-
-
-
-<div className="message-content">
-
-
-
-
-
-
-
-{message.role?.toLowerCase() === 'user' ? (
-
-
-
-  message.content?.includes(
-
-
-
-    'Create ONE combined educational or skills assessment.'
-
-
-
-  ) ? (
-
-
-
-    <AssessmentRequestSummary content={message.content} />
-
-
-
-  ) : (
-
-
-
-    <p>{message.content}</p>
-
-
-
-  )
-
-
-
-) : (
-
-
-
-
-
-
-
-    <>
-
-
-
-      <div id={`assessment-message-${message.id}`}>
-
-
-
-        <AssessmentMarkdown content={message.content} />
-
-
-
+                <button
+                  type="button"
+                  className="assessment-pdf-button"
+                  onClick={() => handleDownloadDOCX(message)}
+                >
+                  Download DOCX
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
+      <button
+        type="button"
+        onClick={() => copyChatMessage(message)}
+        aria-label={`Copy ${message.role?.toLowerCase() === 'user' ? 'your' : 'AI'} message`}
+        title="Copy message"
+        style={{
+          alignSelf: 'flex-start',
+          marginTop: '6px',
+          padding: '4px 10px',
+          cursor: 'pointer'
+        }}
+      >
+        <i className="fa-regular fa-copy" aria-hidden="true" /> Copy
+      </button>
+    </article>
+  ))}
 
-
-
-
-
-
-      {message.content?.includes('Assessment Overview') && (
-
-        <div className="assessment-download-actions">
-
-          <button
-
-            type="button"
-
-            className="assessment-pdf-button"
-
-            onClick={() => downloadAssessmentPDF(message.id)}
-
-          >
-
-            Download PDF
-
-          </button>
-
-          <button
-
-            type="button"
-
-            className="assessment-pdf-button"
-
-            onClick={() => handleDownloadDOCX(message)}
-
-          >
-
-            Download DOCX
-
-          </button>
-
-        </div>
-
-      )}
-
-    </>
-
-
-
+  {generatingImage && (
+    <article className="message-row assistant">
+      <div className="message-label">Enablr AI</div>
+      <div className="message-content">
+        <p className="image-generation-status" role="status">
+          <span
+            className="image-generation-spinner"
+            aria-hidden="true"
+          />
+          Enablr AI is generating image...
+        </p>
+      </div>
+    </article>
   )}
 
 
 
-</div>
 
+{writingJob && activeConversationId && (
+  <article className="message-row assistant">
+    <div className="message-label">Enablr AI — Long Writing</div>
 
+    <div className="message-content">
+      <h3>{writingJob.topic || 'Long-Form Writing'}</h3>
 
+      <p>
+        <strong>Status:</strong> {writingJob.status || 'PENDING'}
+      </p>
 
+      <p>
+        <strong>Generated Words:</strong>{' '}
+        {writingJob.generatedWords ?? 0}
+      </p>
 
+      {writingJob.status === 'RUNNING' && (
+        <p role="status">Generating your document...</p>
+      )}
 
+      {writingJob.status === 'PAUSED' && (
+        <p>Writing paused. Resume support will be added next.</p>
+      )}
 
-    </article>
+      {writingJob.status === 'FAILED' && (
+        <p>Writing generation failed.</p>
+      )}
 
+      {writingLoading && <p>Loading writing job...</p>}
 
+      {writingError && (
+        <p role="alert">{writingError}</p>
+      )}
 
-  ))}
+      {writingParts.map((part, index) => (
+        <div
+          className="writing-part"
+          key={`${writingJob.jobId}-${part.partNumber ?? index}`}
+        >
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {part.content || ''}
+          </ReactMarkdown>
+        </div>
+      ))}
+    </div>
+  </article>
+)}
 
   {sendingMessage && (
     <article className="message-row assistant enablr-chat-loading" role="status" aria-live="polite">
@@ -6224,20 +7062,17 @@ onClick={() => {
       </div>
     </article>
   )}
+  
+{imageGenerationError && (
+  <p className="generated-image-error" role="alert">
+    {imageGenerationError}
+  </p>
+)}
 
 </div>
+))}
+</section>
 
-
-
-
-
-
-
-                   ))}
-
-
-
-        </section>
 
 
 
@@ -6245,49 +7080,43 @@ onClick={() => {
 
 {!accessibilityView && !settingsView && !helpView && (
 
-  <form className="chat-box" onSubmit={sendMessage}>
+  <form className="chat-box" onSubmit={sendMessage} onDragOver={handleChatDragOver} onDrop={handleChatDrop}>
 
 
 
           {selectedFiles.length > 0 && (
+  <div className="selected-files">
+    {selectedFiles.map((file, index) => {
+      const isImage =
+        file.type.startsWith('image/') ||
+        /\.(jpg|jpeg|png|webp)$/i.test(file.name)
 
-
-
-            <div className="selected-files">
-
-
-
-              {selectedFiles.map((file, index) => (
-
-
-
-                <span className="file-chip" key={`${file.name}-${index}`}>
-
-
-
-                  <i className="fa-regular fa-file" aria-hidden="true" /> {file.name}
-
-
-
-                  <button type="button" aria-label={`Remove ${file.name}`} onClick={() => setSelectedFiles((current) => current.filter((_, i) => i !== index))}>×</button>
-
-
-
-                </span>
-
-
-
-              ))}
-
-
-
-            </div>
-
-
-
+      return (
+        <div className="file-chip" key={`${file.name}-${index}`}>
+          {isImage ? (
+            <SelectedImagePreview file={file} />
+          ) : (
+            <i className="fa-regular fa-file" aria-hidden="true" />
           )}
 
+          <span className="selected-file-name">{file.name}</span>
 
+          <button
+            type="button"
+            aria-label={`Remove ${file.name}`}
+            onClick={() =>
+              setSelectedFiles((current) =>
+                current.filter((_, i) => i !== index)
+              )
+            }
+          >
+            ×
+          </button>
+        </div>
+      )
+    })}
+  </div>
+)}
 
           <textarea
 
@@ -6310,6 +7139,7 @@ onClick={() => {
 
 
             onKeyDown={handleKeyDown}
+            onPaste={handleChatPaste}
 
 
 
