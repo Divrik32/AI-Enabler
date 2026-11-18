@@ -330,6 +330,7 @@ function AssessmentRequestSummary({ content }) {
 
 function SelectedImagePreview({ file }) {
   const [previewUrl, setPreviewUrl] = useState('')
+  const [showFullImage, setShowFullImage] = useState(false)
 
   useEffect(() => {
     const url = URL.createObjectURL(file)
@@ -338,13 +339,64 @@ function SelectedImagePreview({ file }) {
     return () => URL.revokeObjectURL(url)
   }, [file])
 
-  return previewUrl ? (
-    <img
-      src={previewUrl}
-      alt={`Preview of ${file.name}`}
-      className="selected-image-preview"
-    />
-  ) : null
+  if (!previewUrl) return null
+
+  return (
+    <>
+      <img
+        src={previewUrl}
+        alt={`Preview of ${file.name}`}
+        className="selected-image-preview"
+        onClick={() => setShowFullImage(true)}
+        style={{ cursor: 'zoom-in' }}
+      />
+
+      {showFullImage && (
+        <div
+          onClick={() => setShowFullImage(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.9)',
+            zIndex: 99999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px'
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setShowFullImage(false)}
+            style={{
+              position: 'absolute',
+              top: 20,
+              right: 25,
+              color: 'white',
+              background: 'transparent',
+              border: 'none',
+              fontSize: 32,
+              cursor: 'pointer'
+            }}
+          >
+            ×
+          </button>
+
+          <img
+            src={previewUrl}
+            alt="Full image preview"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: '95vw',
+              maxHeight: '90vh',
+              objectFit: 'contain',
+              borderRadius: '8px'
+            }}
+          />
+        </div>
+      )}
+    </>
+  )
 }
 
 
@@ -362,6 +414,7 @@ function ChatImageThumbnail({
 }) {
   const [url, setUrl] = useState('')
   const [error, setError] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
 
   useEffect(() => {
     if (!localFile && (!conversationId || !imageId || !token)) return
@@ -401,17 +454,17 @@ function ChatImageThumbnail({
 
   if (error) return <span className="chat-image-error">Image unavailable</span>
   if (!url) return <span className="chat-image-loading">Loading image...</span>
-  return (
+   return (
     <a href={url} target="_blank" rel="noopener noreferrer" className="chat-image-link" aria-label="View uploaded image">
       <img
-  src={url}
-  alt={isGenerated ? 'Generated image' : 'Uploaded image'}
-  className={
-    isGenerated
-      ? 'chat-image-generated'
-      : 'chat-image-thumbnail'
-  }
-/>
+        src={url}
+        alt={isGenerated ? 'Generated image' : 'Uploaded image'}
+        className={
+          isGenerated
+            ? 'chat-image-generated'
+            : 'chat-image-thumbnail'
+        }
+      />
     </a>
   )
 }
@@ -445,6 +498,10 @@ function UserChatMessage({ message, conversationId, token }) {
 
 function isImageGenerationRequest(text) {
   const prompt = String(text || '').trim()
+  .replace(/\b(generte|genrate|genarate|genratee)\b/gi, 'generate')
+  .replace(/\b(creat|crate|creatte)\b/gi, 'create')
+  .replace(/\b(imge|iamge|imag)\b/gi, 'image')
+  .replace(/\b(pictur|piture)\b/gi, 'picture')
 
   if (!prompt) return false
 
@@ -591,8 +648,85 @@ const [accessibilitySaving, setAccessibilitySaving] = useState(false)
 
 
 
-  const [messages, setMessages] = useState([])
+ const [messages, setMessages] = useState([])
 
+ const [editingMessageId, setEditingMessageId] = useState(null)
+const [editedMessageText, setEditedMessageText] = useState('')
+const [savingEditedMessage, setSavingEditedMessage] = useState(false)
+
+const chatScrollRef = useRef(null)
+
+// Sidebar Hide / Show
+const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+
+const handleChatScroll = () => {
+  const messageList = chatScrollRef.current
+  if (!messageList) return
+
+  let container = messageList
+
+  // Find the actual scrollable parent
+  while (container) {
+    const style = window.getComputedStyle(container)
+
+    if (
+      ['auto', 'scroll'].includes(style.overflowY) &&
+      container.scrollHeight > container.clientHeight
+    ) {
+      break
+    }
+
+    container = container.parentElement
+  }
+
+  if (!container) {
+    container = document.scrollingElement
+  }
+
+  if (!container) return
+
+  const remainingScroll =
+    container.scrollHeight -
+    container.scrollTop -
+    container.clientHeight
+
+  setShowScrollToBottom(remainingScroll > 100)
+}
+
+useEffect(() => {
+  const messageList = chatScrollRef.current
+  if (!messageList) return
+
+  let container = messageList
+
+  while (container) {
+    const style = window.getComputedStyle(container)
+
+    if (
+      ['auto', 'scroll'].includes(style.overflowY) &&
+      container.scrollHeight > container.clientHeight
+    ) {
+      break
+    }
+
+    container = container.parentElement
+  }
+
+  const scrollContainer = container || document.scrollingElement
+
+  if (!scrollContainer) return
+
+  handleChatScroll()
+
+  scrollContainer.addEventListener('scroll', handleChatScroll, {
+    passive: true
+  })
+
+  return () => {
+    scrollContainer.removeEventListener('scroll', handleChatScroll)
+  }
+}, [messages, activeConversationId])
   // Cloudflare generated image state
 const [generatedImage, setGeneratedImage] = useState(null)
 const [generatingImage, setGeneratingImage] = useState(false)
@@ -2996,8 +3130,11 @@ setActiveConversationId(conversationId)
 // Reload saved user and AI messages from Oracle.
 
 
-
 await openConversation(conversationId)
+
+
+
+
 
 
 
@@ -3630,13 +3767,13 @@ if (checkResponse.ok) {
 
 const imageUrl = URL.createObjectURL(imageBlob)
 
+await openConversation(conversationId)
+
 setGeneratedImage({
   url: imageUrl,
   prompt: imagePrompt,
   isMock: false
 })
-
-await openConversation(conversationId)
 const conversationsResponse = await fetch(
   'http://localhost:8080/api/conversations',
   {
@@ -4435,7 +4572,131 @@ if (activeConversationIdRef.current === conversationId) {
   }
 
 
+// Bug 17 - Start editing a user message
+function handleEditMessage(message) {
+  if (savingEditedMessage || sendingMessage || generatingImage) return
 
+  setEditingMessageId(message.id)
+  setEditedMessageText(String(message.content || ''))
+  setNotice('')
+}
+
+// Bug 17 - Cancel editing
+function handleCancelEditMessage() {
+  if (savingEditedMessage) return
+
+  setEditingMessageId(null)
+  setEditedMessageText('')
+}
+
+// Bug 17 - Save edited prompt and regenerate AI response
+async function handleSaveEditedMessage() {
+  const updatedText = editedMessageText.trim()
+
+  if (!updatedText || editingMessageId == null) {
+    setNotice('Edited message cannot be empty.')
+    return
+  }
+
+  const conversationId = activeConversationIdRef.current
+
+  if (!conversationId) {
+    setNotice('No active conversation selected.')
+    return
+  }
+
+  if (savingEditedMessage || sendingMessage || generatingImage) return
+
+  setSavingEditedMessage(true)
+  setNotice('')
+
+  try {
+    const response = await fetch(
+      `http://localhost:8080/api/conversations/${conversationId}/messages/${editingMessageId}`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${auth.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ content: updatedText })
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Unable to edit message (${response.status}): ${errorText}`)
+    }
+
+  // Check whether the edited message is the first message
+const firstMessage = messages[0]
+
+const isFirstMessage =
+  firstMessage?.role?.toLowerCase() === 'user' &&
+  String(firstMessage.id) === String(editingMessageId)
+
+setEditingMessageId(null)
+setEditedMessageText('')
+
+// Reload updated messages
+await openConversation(conversationId)
+
+// Refresh sidebar conversation list
+// Refresh sidebar titles after editing a message
+const titlesResponse = await fetch(
+  'http://localhost:8080/api/conversations',
+  {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${auth.token}`,
+      Accept: 'application/json'
+    },
+    cache: 'no-store'
+  }
+)
+
+if (!titlesResponse.ok) {
+  throw new Error(
+    `Failed to refresh sidebar (${titlesResponse.status})`
+  )
+}
+
+const updatedConversations = await titlesResponse.json()
+
+if (Array.isArray(updatedConversations)) {
+  setConversations(updatedConversations)
+}
+
+// Update sidebar title immediately only for the first message
+if (
+  isFirstMessage &&
+  String(activeConversationIdRef.current) === String(conversationId)
+) {
+  setConversations((current) =>
+    current.map((conversation) => {
+      if (
+        String(conversation.conversationId ?? conversation.id) !==
+        String(conversationId)
+      ) {
+        return conversation
+      }
+
+      return {
+        ...conversation,
+        title: updatedText.slice(0, 60)
+      }
+    })
+  )
+}
+
+setNotice('Message updated successfully.')
+  } catch (error) {
+    console.error('Edit message failed:', error)
+    setNotice(error.message || 'Unable to update message.')
+  } finally {
+    setSavingEditedMessage(false)
+  }
+}
 
 
 
@@ -4821,6 +5082,9 @@ async function openAccessibilityConversation(conversationId) {
 
 
     const savedScan = await response.json()
+
+
+
 
 
 
@@ -5782,9 +6046,27 @@ setSavedAccessibilityScan(null)
 
       )}
 
+{!isSidebarOpen && (
+  <button
+    type="button"
+    className="sidebar-toggle-btn"
+    onClick={() => setIsSidebarOpen(true)}
+    title="Open sidebar"
+    aria-label="Open sidebar"
+  >
+    <i className="fa-solid fa-bars" aria-hidden="true" />
+  </button>
+)}
 
+{isSidebarOpen && (
+  <div
+    className="sidebar-backdrop"
+    onClick={() => setIsSidebarOpen(false)}
+    aria-hidden="true"
+  />
+)}
 
-      <aside className="sidebar">
+<aside className={`sidebar ${isSidebarOpen ? '' : 'sidebar-hidden'}`}>
 
 
 
@@ -6365,7 +6647,7 @@ onClick={() => {
 
 
 
-      <main className="main-panel">
+     <main className={`main-panel ${isSidebarOpen ? '' : 'main-panel-expanded'}`}>
 
 
 
@@ -6905,7 +7187,15 @@ onClick={() => {
 
 
 
-<div className="message-list" aria-live="polite">
+<>
+  
+
+ <div
+  className="message-list"
+  aria-live="polite"
+  ref={chatScrollRef}
+  onScroll={handleChatScroll}
+>
   {messages.map((message) => (
     <article
       className={`message-row ${message.role?.toLowerCase()}`}
@@ -6916,19 +7206,58 @@ onClick={() => {
       </div>
 
       <div className="message-content">
-        {message.role?.toLowerCase() === 'user' ? (
-          String(message.content || '').includes(
-            'Create ONE combined educational or skills assessment.'
-          ) ? (
-            <AssessmentRequestSummary content={message.content} />
-          ) : (
-            <UserChatMessage
-              message={message}
-              conversationId={activeConversationId}
-              token={auth?.token}
-            />
-          )
-        ) : (
+      {message.role?.toLowerCase() === 'user' ? (
+  editingMessageId === message.id ? (
+    <div className="message-edit-box">
+      <textarea
+        value={editedMessageText}
+        onChange={(e) => setEditedMessageText(e.target.value)}
+        rows={4}
+        disabled={savingEditedMessage}
+        style={{
+          width: '100%',
+          padding: '12px',
+          borderRadius: '8px',
+          resize: 'vertical',
+          boxSizing: 'border-box'
+        }}
+      />
+
+      <div style={{
+        display: 'flex',
+        justifyContent: 'flex-end',
+        gap: '10px',
+        marginTop: '10px'
+      }}>
+        <button
+          type="button"
+          onClick={handleCancelEditMessage}
+          disabled={savingEditedMessage}
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          onClick={handleSaveEditedMessage}
+          disabled={savingEditedMessage || !editedMessageText.trim()}
+        >
+          {savingEditedMessage ? 'Generating...' : 'Save & Submit'}
+        </button>
+      </div>
+    </div>
+  ) : String(message.content || '').includes(
+    'Create ONE combined educational or skills assessment.'
+  ) ? (
+    <AssessmentRequestSummary content={message.content} />
+  ) : (
+    <UserChatMessage
+      message={message}
+      conversationId={activeConversationId}
+      token={auth?.token}
+    />
+  )
+) : (
           <>
             {String(message.content || '').startsWith('[Generated image ID:') ? (
               <UserChatMessage
@@ -6964,6 +7293,31 @@ onClick={() => {
           </>
         )}
       </div>
+
+
+      {message.role?.toLowerCase() === 'user' &&
+  message.id != null &&
+  !String(message.content || '').includes('[Attached') &&
+  !String(message.content || '').includes(
+    'Create ONE combined educational or skills assessment.'
+  ) &&
+  !isImageGenerationRequest(message.content) && (
+    <button
+  type="button"
+  onClick={() => handleEditMessage(message)}
+  disabled={savingEditedMessage || sendingMessage || generatingImage}
+  title="Edit message"
+  style={{
+    alignSelf: 'flex-start',
+    marginTop: '6px',
+    marginRight: '10px',
+    padding: '4px 10px',
+    cursor: 'pointer'
+  }}
+>
+  <i className="fa-solid fa-pen" aria-hidden="true" /> Edit
+</button>
+  )}
 
       <button
         type="button"
@@ -7070,9 +7424,46 @@ onClick={() => {
 )}
 
 </div>
+
+{showScrollToBottom && (
+  <button
+    type="button"
+    className="scroll-to-bottom-btn"
+    title="Go to latest message"
+    aria-label="Scroll to bottom"
+    onClick={() => {
+  let container = chatScrollRef.current
+
+  while (container) {
+    const style = window.getComputedStyle(container)
+
+    if (
+      ['auto', 'scroll'].includes(style.overflowY) &&
+      container.scrollHeight > container.clientHeight
+    ) {
+      break
+    }
+
+    container = container.parentElement
+  }
+
+  container = container || document.scrollingElement
+
+  if (!container) return
+
+  container.scrollTo({
+    top: container.scrollHeight,
+    behavior: 'smooth'
+  })
+}}
+  >
+    ↓
+  </button>
+)}
+
+</>
 ))}
 </section>
-
 
 
 

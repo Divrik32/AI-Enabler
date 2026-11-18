@@ -15,4 +15,10 @@ public interface MessageRepository
 
     // Delete all messages belonging to a conversation.
     void deleteByConversation(Conversation conversation);
+    
+ // Delete messages after the edited message.
+    void deleteByConversationAndMessageIdGreaterThan(
+            Conversation conversation,
+            Long messageId
+    );
 }

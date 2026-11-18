@@ -1907,3 +1907,39 @@
   margin-bottom: 8px;
   line-height: 1.5;
 }
+
+
+/* BUG-005: PDF Report table formatting */
+
+.a11y-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+  font-size: 14px;
+}
+
+.a11y-report-table th,
+.a11y-report-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: center;
+}
+
+.a11y-report-table th:first-child,
+.a11y-report-table td:first-child {
+  text-align: left;
+  width: 40%;
+}
+
+.a11y-report-table thead {
+  background: #f1f5f9;
+}
+
+.a11y-report-table th {
+  font-weight: 600;
+  color: #111827;
+}
+
+.a11y-report-table tbody tr:hover {
+  background: #f8fafc;
+}

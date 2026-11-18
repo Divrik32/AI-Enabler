@@ -2366,3 +2366,271 @@ margin-bottom: 0;
     transform: rotate(360deg);
   }
 }
+
+
+/* Scroll to bottom button */
+
+.scroll-to-bottom-btn {
+  position: fixed;
+  bottom: 145px;
+  left: calc(50% + 60px);
+  transform: translateX(-50%);
+  z-index: 100;
+
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: #ffffff;
+  color: #202124;
+  border: 1px solid #dadce0;
+
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+.scroll-to-bottom-btn:hover {
+  background: #f1f3f4;
+}
+
+[data-theme="dark"] .scroll-to-bottom-btn {
+  background: #303030;
+  color: #ffffff;
+  border-color: #555555;
+}
+
+@media (max-width: 768px) {
+  .scroll-to-bottom-btn {
+    bottom: 115px;
+  }
+}
+
+
+
+/* Mobile */
+
+@media (max-width: 768px) {
+  .chat-scroll-navigation {
+    right: 15px;
+    bottom: 110px;
+  }
+
+  .chat-scroll-navigation button {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+
+/* Sidebar Hide / Show */
+
+.sidebar {
+  transition: transform 0.25s ease, margin-left 0.25s ease;
+}
+
+.sidebar.sidebar-hidden {
+  transform: translateX(-100%);
+  margin-left: -260px;
+}
+
+/* Sidebar Toggle Button */
+
+.sidebar-toggle-btn {
+  position: fixed;
+  top: 20px;
+  z-index: 9999;
+
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: #ffffff;
+  color: #202124;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 17px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  transition: left 0.25s ease;
+}
+
+.sidebar-toggle-btn:hover {
+  background: #f1f3f4;
+}
+
+[data-theme="dark"] .sidebar-toggle-btn {
+  background: #303030;
+  color: #ffffff;
+  border-color: #555555;
+}
+
+
+
+/* Expand chat area when sidebar is hidden */
+
+.main-panel-expanded {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  margin-left: 0;
+}
+
+
+
+.sidebar-toggle-open {
+  left: 245px;
+}
+
+.sidebar-toggle-closed {
+  left: 20px;
+}
+
+
+/* Final sidebar toggle positioning */
+
+.sidebar-toggle-btn.sidebar-toggle-open {
+  left: 245px;
+}
+
+.sidebar-toggle-btn.sidebar-toggle-closed {
+  left: 20px;
+}
+
+
+/* Sidebar Overlay - Open / Close */
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 300px;
+  max-width: 85vw;
+  z-index: 1001;
+  transform: translateX(0);
+  margin-left: 0;
+  transition: transform 0.25s ease;
+}
+
+.sidebar.sidebar-hidden {
+  transform: translateX(-105%);
+  margin-left: 0;
+  pointer-events: none;
+}
+
+/* Click outside sidebar to close */
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  z-index: 1000;
+}
+
+/* Toggle icon at top-right */
+
+.sidebar-toggle-btn {
+  position: fixed;
+  top: 20px;
+  left: 20px !important;
+  right: auto !important;
+  z-index: 1002;
+}
+/* Main content stays in place */
+/* Main content layout */
+
+.main-panel,
+.main-panel-expanded {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  margin-left: 0;
+  box-sizing: border-box;
+}
+
+/* Sidebar open: keep chat clear of sidebar */
+
+body:has(.sidebar:not(.sidebar-hidden)) .main-panel {
+  margin-left: 300px;
+  width: calc(100% - 300px);
+}
+
+/* Sidebar closed: full chat width */
+
+body:has(.sidebar.sidebar-hidden) .main-panel {
+  margin-left: 0;
+  width: 100%;
+}
+
+
+
+/* Sidebar closed - keep toggle separate from title */
+
+.sidebar-toggle-btn {
+  position: fixed;
+  top: 20px;
+  left: 20px !important;
+  right: auto !important;
+  z-index: 1002;
+}
+
+/* Give title space when sidebar is closed */
+
+body:has(.sidebar.sidebar-hidden) .main-panel {
+  padding-top: 0;
+}
+
+/* Sidebar closed: icon left, title beside it */
+
+body:has(.sidebar.sidebar-hidden) .main-panel .top-bar {
+  padding-left: 65px;
+}
+
+
+
+/* Align Enablr AI title beside sidebar toggle */
+
+body:has(.sidebar.sidebar-hidden) .main-panel {
+  padding-top: 0 !important;
+}
+
+body:has(.sidebar.sidebar-hidden) .main-panel .top-bar {
+  padding-left: 0 !important;
+}
+
+body:has(.sidebar.sidebar-hidden) .main-panel .top-bar {
+  transform: translateX(55px);
+}
+
+
+/* Sidebar closed: align title beside menu icon */
+
+body:has(.sidebar.sidebar-hidden) .main-panel .topbar {
+  padding-left: 75px !important;
+  transform: none !important;
+}
+
+
+
+/* Align menu icon and Enablr AI title */
+
+body:has(.sidebar.sidebar-hidden) .sidebar-toggle-btn {
+  top: 20px !important;
+  left: 20px !important;
+}
+
+body:has(.sidebar.sidebar-hidden) .main-panel .topbar {
+  padding-left: 75px !important;
+  padding-top: 20px !important;
+  transform: none !important;
+}

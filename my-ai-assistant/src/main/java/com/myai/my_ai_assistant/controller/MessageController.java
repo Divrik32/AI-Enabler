@@ -2,6 +2,7 @@ package com.myai.my_ai_assistant.controller;
 
 import java.util.List;
 
+
 import org.springframework.http.HttpStatus;
 
 import org.springframework.security.core.Authentication;
@@ -62,6 +63,8 @@ import org.springframework.http.HttpHeaders;
 
 import com.myai.my_ai_assistant.entity.ConversationImage;
 import com.myai.my_ai_assistant.repository.ConversationImageRepository;
+
+import org.springframework.web.bind.annotation.PutMapping;
 
 @RestController
 
@@ -1249,6 +1252,79 @@ return new MessageResponse(
                 ex
         );
     }
+}
+
+
+@PutMapping("/{conversationId}/messages/{messageId}")
+public MessageResponse editMessage(
+        @PathVariable Long conversationId,
+        @PathVariable Long messageId,
+        @Valid @RequestBody MessageCreateRequest request,
+        Authentication authentication) {
+
+    if (authentication == null || !authentication.isAuthenticated()) {
+        throw new ResponseStatusException(
+                HttpStatus.UNAUTHORIZED,
+                "Authentication required."
+        );
+    }
+
+    User user = userRepository
+            .findByUsername(authentication.getName())
+            .orElseThrow(() ->
+                    new ResponseStatusException(
+                            HttpStatus.UNAUTHORIZED,
+                            "User not found."
+                    )
+            );
+
+    Conversation conversation = conversationRepository
+            .findById(conversationId)
+            .orElseThrow(() ->
+                    new ResponseStatusException(
+                            HttpStatus.NOT_FOUND,
+                            "Conversation not found."
+                    )
+            );
+
+    if (!conversation.getUser().getUserId()
+            .equals(user.getUserId())) {
+        throw new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Conversation not found."
+        );
+    }
+
+    if (request.getContent() == null ||
+            request.getContent().isBlank()) {
+        throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Edited message cannot be empty."
+        );
+    }
+
+    Message aiMessage;
+
+    try {
+        aiMessage = messageService.editUserMessage(
+                conversation,
+                messageId,
+                request.getContent()
+        );
+    } catch (IllegalArgumentException ex) {
+        throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+    }
+
+    return new MessageResponse(
+            aiMessage.getMessageId(),
+            conversation.getConversationId(),
+            aiMessage.getRole(),
+            aiMessage.getContent(),
+            aiMessage.getCreatedDate()
+    );
 }
 
 }

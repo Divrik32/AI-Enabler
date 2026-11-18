@@ -555,4 +555,110 @@ public Optional<ConversationImage> getLatestConversationImage(
             .findFirstByConversationOrderByImageIdDesc(conversation);
 }
 
+
+@Transactional
+public Message editUserMessage(
+        Conversation conversation,
+        Long messageId,
+        String updatedContent) {
+
+    if (updatedContent == null || updatedContent.isBlank()) {
+        throw new IllegalArgumentException("Message cannot be empty.");
+    }
+
+    Message originalMessage = messageRepository.findById(messageId)
+            .orElseThrow(() ->
+                    new IllegalArgumentException("Message not found."));
+
+    if (!originalMessage.getConversation().getConversationId()
+            .equals(conversation.getConversationId())) {
+        throw new IllegalArgumentException(
+                "Message does not belong to this conversation.");
+    }
+
+    if (originalMessage.getRole() != MessageRole.USER) {
+        throw new IllegalArgumentException(
+                "Only user messages can be edited.");
+    }
+
+    List<Message> history = getConversationMessages(conversation);
+
+    int editIndex = -1;
+
+    for (int i = 0; i < history.size(); i++) {
+        if (history.get(i).getMessageId().equals(messageId)) {
+            editIndex = i;
+            break;
+        }
+    }
+
+    if (editIndex < 0) {
+        throw new IllegalArgumentException("Message not found in history.");
+    }
+
+    String newPrompt = updatedContent.trim();
+
+    // Build a temporary conversation context up to the edited message.
+    // Generate AI response without modifying saved history first.
+    List<Message> previousMessages = history.subList(0, editIndex);
+
+    StringBuilder prompt = new StringBuilder();
+
+    prompt.append("""
+            You are a helpful, natural, and concise AI assistant.
+
+            Answer the latest user message using the previous conversation
+            as context when relevant.
+
+            Conversation history:
+            """);
+
+    int start = Math.max(0, previousMessages.size() - 6);
+
+    for (int i = start; i < previousMessages.size(); i++) {
+        Message previous = previousMessages.get(i);
+
+        prompt.append(
+                previous.getRole() == MessageRole.USER
+                        ? "User: "
+                        : "Assistant: "
+        );
+
+        prompt.append(previous.getContent()).append("\n\n");
+    }
+
+    prompt.append("User: ").append(newPrompt).append("\n\nAssistant:");
+
+    // Generate first: if AI fails, existing messages remain unchanged.
+    String aiResponse = aiService.generateResponse(
+            new AiRequest(prompt.toString())
+    );
+
+    // Remove all messages after the edited message.
+    // Use history order rather than assuming message IDs are chronological.
+    for (int i = history.size() - 1; i > editIndex; i--) {
+        messageRepository.delete(history.get(i));
+    }
+
+    originalMessage.setContent(newPrompt);
+    messageRepository.save(originalMessage);
+    
+    
+ // Bug 17 - Update conversation title only when first message is edited
+    if (editIndex == 0) {
+        String updatedTitle = newPrompt.length() > 60
+                ? newPrompt.substring(0, 60)
+                : newPrompt;
+
+        conversation.setTitle(updatedTitle);
+    }
+
+    Message aiMessage = new Message();
+    aiMessage.setConversation(conversation);
+    aiMessage.setRole(MessageRole.AI);
+    aiMessage.setContent(aiResponse);
+
+    return messageRepository.save(aiMessage);
+}
+
 }

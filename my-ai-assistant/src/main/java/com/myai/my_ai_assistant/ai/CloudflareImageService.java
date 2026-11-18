@@ -42,6 +42,7 @@ public class CloudflareImageService {
 
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
+                .requestFactory(requestFactory)
                 .defaultHeader(
                         HttpHeaders.AUTHORIZATION,
                         "Bearer " + apiToken)

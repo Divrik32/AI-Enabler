@@ -3,10 +3,91 @@ import fs from 'node:fs/promises'
 import JSZip from 'jszip'
 import { XMLParser } from 'fast-xml-parser'
 
+
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_'
 })
+
+
+const execFileAsync = promisify(execFile)
+
+// Run standards-based PDF/UA validation.
+// This helper does not modify the original PDF.
+async function runPdfUaValidation(filePath) {
+  const validatorPath = process.env.PDF_UA_VALIDATOR_PATH
+
+  if (!validatorPath) {
+    return {
+      available: false,
+      reason: 'PDF/UA validation engine is not configured.'
+    }
+  }
+
+  try {
+    const { stdout } = await execFileAsync(
+  process.platform === 'win32' ? 'cmd.exe' : validatorPath,
+  process.platform === 'win32'
+    ? [
+        '/d',
+        '/c',
+        `""${validatorPath}" --flavour ua1 --format json --nonpdfext --maxfailuresdisplayed -1 "${filePath}""`
+      ]
+    : [
+        '--flavour',
+        'ua1',
+        '--format',
+        'json',
+        '--maxfailuresdisplayed',
+        '-1',
+        filePath
+      ],
+  {
+    timeout: 120000,
+    maxBuffer: 50 * 1024 * 1024,
+    windowsHide: true,
+    windowsVerbatimArguments: process.platform === 'win32'
+  }
+)
+    return {
+      available: true,
+      report: JSON.parse(stdout)
+    }
+} catch (error) {
+  const output = String(error.stdout || '').trim()
+
+  if (output) {
+    try {
+      const report = JSON.parse(output)
+
+      console.log(
+        '[PDF/UA VALIDATION] JSON report recovered successfully'
+      )
+
+      return {
+        available: true,
+        report
+      }
+    } catch (parseError) {
+      console.warn(
+        '[PDF/UA VALIDATION] JSON parsing failed:',
+        parseError.message
+      )
+    }
+  }
+
+  return {
+    available: false,
+    reason: error.message || 'PDF/UA validation failed.'
+  }
+}
+}
+
+
+
 
 const asArray = value =>
   value == null ? [] : Array.isArray(value) ? value : [value]
@@ -240,7 +321,13 @@ function buildMarkedContentTextMap(textContent) {
     }
   }
 
-  return textMap
+ for (const [id, text] of textMap.entries()) {
+  if (typeof text !== 'string' || !text.trim()) {
+    textMap.delete(id)
+  }
+}
+
+return textMap
 }
 
 
@@ -260,9 +347,9 @@ function attachTextToStructure(node, textMap) {
   if (typeof result.id === 'string') {
     const text = textMap.get(result.id)
 
-    if (text) {
-      result.text = text.trim()
-    }
+    if (typeof text === 'string' && text.trim().length > 0) {
+  result.text = text.trim()
+}
   }
 
   if (Array.isArray(result.children)) {
@@ -300,6 +387,49 @@ export async function scanPdf(filePath) {
     const tagTree = []
     const readingPreview = []
 
+
+
+    // Run PDF/UA-1 accessibility validation
+const pdfUaResult = await runPdfUaValidation(filePath)
+
+if (pdfUaResult.available) {
+  console.log(
+    '[PDF/UA VALIDATION] Report received successfully'
+  )
+
+  console.log(
+    '[PDF/UA VALIDATION] Report keys:',
+    Object.keys(pdfUaResult.report)
+  )
+
+  const validationReport = pdfUaResult.report?.report
+
+console.log(
+  '[PDF/UA VALIDATION] Summary:',
+  JSON.stringify(validationReport?.jobs?.[0]?.validationResult?.[0]?.details
+    ? {
+        passedRules: validationReport.jobs[0].validationResult[0].details.passedRules,
+        failedRules: validationReport.jobs[0].validationResult[0].details.failedRules,
+        passedChecks: validationReport.jobs[0].validationResult[0].details.passedChecks,
+        failedChecks: validationReport.jobs[0].validationResult[0].details.failedChecks
+      }
+    : validationReport,
+    null,
+    2
+  ).slice(0, 3000)
+)
+
+
+} else {
+  console.warn(
+    '[PDF/UA VALIDATION] Unavailable:',
+    pdfUaResult.reason
+  )
+}
+
+
+
+
     const metadata = await pdf
       .getMetadata()
       .catch(() => ({}))
@@ -310,23 +440,29 @@ export async function scanPdf(filePath) {
     // DOCUMENT TITLE
     // --------------------------------------------------------
 
-    if (info.Title) {
-      findings.push(finding(
-        'passed',
-        'Document title',
-        'PDF contains a document title.',
-        '',
-        'Document metadata'
-      ))
-    } else {
-      findings.push(finding(
-        'failed',
-        'Missing document title',
-        'PDF metadata does not contain a title.',
-        'Add a meaningful document title.',
-        'Document metadata'
-      ))
-    }
+    const infoTitle = String(info.Title || '').trim()
+
+const xmpTitle = String(
+  metadata?.metadata?.get('dc:title') || ''
+).trim()
+
+const documentTitle = xmpTitle || infoTitle
+
+findings.push(finding(
+  documentTitle ? 'passed' : 'failed',
+  documentTitle ? 'Document title' : 'Missing document title',
+  documentTitle
+    ? `Document title: ${documentTitle}. Source: ${
+        xmpTitle ? 'XMP metadata' : 'PDF Information Dictionary'
+      }. This check does not establish PDF/UA conformance.`
+    : 'No document title found in the PDF Information Dictionary or XMP metadata.',
+  documentTitle
+    ? ''
+    : 'Add a meaningful document title to the PDF metadata.',
+  'Document metadata',
+  'Document properties'
+))
+ 
 
     // --------------------------------------------------------
     // DOCUMENT LANGUAGE
@@ -342,6 +478,10 @@ export async function scanPdf(filePath) {
 
     let pagesWithStructure = 0
 
+
+    const missingAnnotationDescriptions = []
+let totalAnnotationsChecked = 0
+
     // --------------------------------------------------------
     // PAGE SCANNING
     // --------------------------------------------------------
@@ -354,7 +494,63 @@ export async function scanPdf(filePath) {
       const page = await pdf.getPage(pageNo)
 
       try {
-        const textContent = await page.getTextContent({
+
+
+        // PDF annotation accessibility inspection
+const annotations = await page.getAnnotations({
+  intent: 'display'
+})
+
+
+for (const annotation of annotations) {
+  if (annotation.subtype !== 'Link') continue
+
+  totalAnnotationsChecked++
+
+  const description = String(
+    annotation.contentsObj?.str ||
+    annotation.contents ||
+    ''
+  ).trim()
+
+  if (!description) {
+    missingAnnotationDescriptions.push({
+      page: pageNo,
+      annotationId: annotation.id,
+      subtype: annotation.subtype,
+      visibleText: annotation.overlaidText || '',
+      url: annotation.url || annotation.unsafeUrl || '',
+      issue: 'Annotation /Contents description is missing'
+    })
+  }
+}
+
+console.log(`[PDF ANNOTATIONS] Page ${pageNo}`, 
+  annotations.map(annotation => ({
+    id: annotation.id,
+    subtype: annotation.subtype,
+    annotationType: annotation.annotationType,
+    contents: annotation.contents,
+    titleObj: annotation.titleObj,
+    alternativeText: annotation.alternativeText,
+    accessibilityData: annotation.accessibilityData
+  }))
+)
+  
+
+
+console.log(
+  `[PDF ANNOTATION FULL DETAILS] Page ${pageNo}`,
+  JSON.stringify(
+    annotations.slice(0, 2),
+    null,
+    2
+  )
+)
+
+
+
+const textContent = await page.getTextContent({
           includeMarkedContent: true
         })
 
@@ -445,6 +641,19 @@ if (pageTree) {
     markedContentTextMap
   )
 
+
+
+  if (pageNo === 1) {
+  console.log(
+    '[PDF STRUCTURE FULL DETAILS]',
+    JSON.stringify(enrichedTree, null, 2)
+  )
+}
+
+
+
+
+
   tagTree.push({
     page: pageNo,
     structure: enrichedTree
@@ -495,6 +704,36 @@ if (pageTree) {
         page.cleanup()
       }
     }
+
+
+
+    // --------------------------------------------------------
+// ANNOTATION ALTERNATIVE DESCRIPTION CHECK
+// --------------------------------------------------------
+
+findings.push(finding(
+  totalAnnotationsChecked === 0
+    ? 'manual'
+    : missingAnnotationDescriptions.length > 0
+      ? 'manual'
+      : 'passed',
+
+  'Link annotation description review',
+
+  `${totalAnnotationsChecked} link annotations checked; ` +
+  `${missingAnnotationDescriptions.length} have an empty /Contents. ` +
+  'An empty /Contents alone does not prove an accessibility failure. ' +
+  'Tagged link structure and accessible names require verification.',
+
+  'Verify link annotations against PDF/UA requirements. ' +
+  'Ensure each link has an appropriate accessible name and correct structure.',
+
+  'PDF link annotations',
+
+  'Annotations',
+
+  missingAnnotationDescriptions
+));
 
     // --------------------------------------------------------
     // PDF TAG STRUCTURE FINDINGS
@@ -567,23 +806,105 @@ if (pageTree) {
         'Headings, tables and lists'
     }
 
-    for (const item of findings) {
-      item.category =
-        pdfCategories[item.title] || 'General'
-    }
-
+   for (const item of findings) {
+  item.category =
+    pdfCategories[item.title] || item.category || 'General'
+}
     // --------------------------------------------------------
     // STANDARDS VERIFICATION
     // --------------------------------------------------------
 
-    findings.push(finding(
-      'manual',
-      'PDF/UA conformance validation',
-      'PDF.js extraction cannot validate the full PDF/UA specification.',
-      'Run a dedicated PDF/UA validator and manually verify its results.',
-      'Whole PDF',
-      'Standards verification'
-    ))
+  
+const validationResults =
+  pdfUaResult.available
+    ? pdfUaResult.report?.report?.jobs?.flatMap(
+        job => job.validationResult || []
+      ) || []
+    : []
+
+if (validationResults.length > 0) {
+  for (const validation of validationResults) {
+    const details = validation.details || {}
+
+    for (const rule of details.ruleSummaries || []) {
+      if (String(rule.ruleStatus).toUpperCase() !== 'FAILED') {
+        continue
+      }
+
+      const evidence = (rule.checks || [])
+        .filter(check => check.status === 'failed')
+        .map(check => {
+          const context = String(check.context || '')
+          const pageMatch = context.match(/pages\[(\d+)\]/)
+
+          return {
+            page: pageMatch ? Number(pageMatch[1]) + 1 : null,
+            context,
+            issue: check.errorMessage || rule.description || '',
+            errorArguments: check.errorArguments || []
+          }
+        })
+
+      const clause = rule.clause || 'Unknown'
+      const title = `PDF/UA clause ${clause} — Test ${rule.testNumber}`
+
+      findings.push(finding(
+        'failed',
+        title,
+        `${rule.description || 'PDF/UA requirement failed.'} ` +
+          `${rule.failedChecks || evidence.length} failed checks.`,
+        'Correct the affected PDF objects according to the PDF/UA requirement, then validate the PDF again.',
+        'Whole PDF',
+        rule.tags?.includes('annotation')
+          ? 'Annotations'
+          : rule.tags?.includes('structure')
+            ? 'Tags and structure'
+            : 'Standards verification',
+        evidence
+      ))
+    }
+  }
+
+  const failedPdfUaRules = findings.filter(
+  f => f.title?.startsWith('PDF/UA clause') &&
+       f.status === 'failed'
+).length
+
+findings.push(finding(
+  failedPdfUaRules > 0 ? 'failed' : 'passed',
+  'PDF/UA validation result',
+  failedPdfUaRules > 0
+    ? `PDF/UA validation failed: ${failedPdfUaRules} rule(s) failed. See individual findings for details.`
+    : 'PDF/UA automated validation passed all checked rules.',
+  failedPdfUaRules > 0
+    ? 'Review the failed PDF/UA rules and correct the affected PDF objects.'
+    : '',
+  'Whole PDF',
+  'Standards verification'
+))
+} else {
+  findings.push(finding(
+    'manual',
+    'PDF/UA conformance validation',
+    'Automated PDF/UA validation results are unavailable.',
+    'Verify the PDF with a dedicated accessibility validator.',
+    'Whole PDF',
+    'Standards verification'
+  ))
+}
+
+
+console.log('[PDF FINDINGS SUMMARY]', {
+  total: findings.length,
+  failed: findings.filter(f => f.status === 'failed').length,
+  pdfUaRules: findings
+    .filter(f => f.title?.startsWith('PDF/UA clause'))
+    .map(f => ({
+      title: f.title,
+      affected: f.evidence?.length || 0
+    }))
+})
+
 
     // --------------------------------------------------------
     // RETURN PDF RESULT

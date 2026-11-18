@@ -78,6 +78,41 @@ public class GroqAiService implements AiService {
                     "AI request message cannot be empty."
             );
         }
+        
+        
+        String originalPrompt = request.getMessage();
+
+        boolean isAssessment = originalPrompt.contains(
+                "Create ONE combined educational or skills assessment."
+        );
+
+        int expectedQuestionCount = 0;
+
+        if (isAssessment) {
+
+            Matcher countMatcher = Pattern.compile(
+                    "(?im)^\\s*Total Number of Questions:\\s*(\\d+)\\s*$"
+            ).matcher(originalPrompt);
+
+            if (countMatcher.find()) {
+                expectedQuestionCount = Integer.parseInt(
+                        countMatcher.group(1)
+                );
+            }
+
+            if (expectedQuestionCount < 1 ||
+                    expectedQuestionCount > 50) {
+
+                throw new IllegalArgumentException(
+                        "Invalid assessment question count."
+                );
+            }
+
+            System.out.println(
+                    "ASSESSMENT DEBUG | Expected questions: "
+                    + expectedQuestionCount
+            );
+        }
 
         GroqChatRequest chatRequest = new GroqChatRequest(
                 model,
@@ -184,9 +219,79 @@ public class GroqAiService implements AiService {
                     );
                 }
 
-                return response.choices()
-                        .get(0).message().content();
+                GroqChoice generatedChoice = response.choices().get(0);
 
+                String generatedContent =
+                        generatedChoice.message().content();
+
+                if (isAssessment) {
+
+                    boolean validAssessment =
+                            "stop".equals(generatedChoice.finishReason())
+                            && isValidAssessment(
+                                    generatedContent,
+                                    expectedQuestionCount
+                            );
+
+                    if (!validAssessment) {
+
+                        System.out.println(
+                                "ASSESSMENT DEBUG | Validation failed"
+                                + " | Attempt: " + (attempt + 1)
+                        );
+
+                        if (attempt >= MAX_RATE_LIMIT_RETRIES) {
+
+                            throw new ResponseStatusException(
+                                    HttpStatus.BAD_GATEWAY,
+                                    "Could not generate a complete assessment. "
+                                    + "Please try again."
+                            );
+                        }
+
+                        String retryPrompt = originalPrompt + """
+
+                                CRITICAL CORRECTION:
+
+                                The previous assessment failed validation.
+
+                                Regenerate the COMPLETE assessment.
+                                Do not return a partial assessment.
+
+                                Mandatory formatting:
+                                - Use exactly the heading ## Questions
+                                - Format every main question as **1.** Question text
+                                - Continue numbering sequentially.
+                                - Keep matching sub-items as plain numbered lists.
+                                - Use exactly the heading ## Answer Key
+                                - Provide one numbered answer per question.
+                                - Use exactly the heading ## Scoring Guidelines
+                                - Complete all requested questions and answers.
+
+                                """ + "\nRequired question count: "
+                                + expectedQuestionCount;
+
+                        chatRequest = new GroqChatRequest(
+                                model,
+                                List.of(new GroqMessage(
+                                        "user",
+                                        retryPrompt
+                                )),
+                                false,
+                                8192,
+                                "low"
+                        );
+
+                        continue;
+                    }
+
+                    System.out.println(
+                            "ASSESSMENT DEBUG | Validation successful"
+                            + " | Questions: " + expectedQuestionCount
+                    );
+                }
+
+                return generatedContent;
             } catch (HttpClientErrorException.TooManyRequests ex) {
 
                 long waitMillis = calculateWaitMillis(ex);
@@ -336,7 +441,115 @@ String visionPrompt = """
     return response.choices().get(0).message().content();
 }
 
-   
+private boolean isValidAssessment(
+        String content,
+        int expectedCount) {
+
+    if (content == null || content.isBlank()) {
+        return false;
+    }
+
+    Pattern questionsHeading = Pattern.compile(
+            "(?im)^##[ \\t]+Questions[ \\t]*$"
+    );
+
+    Pattern answerHeading = Pattern.compile(
+            "(?im)^##[ \\t]+Answer Key[ \\t]*$"
+    );
+
+    Pattern scoringHeading = Pattern.compile(
+            "(?im)^##[ \\t]+Scoring Guidelines[ \\t]*$"
+    );
+
+    Matcher questionsMatcher =
+            questionsHeading.matcher(content);
+
+    Matcher answerMatcher =
+            answerHeading.matcher(content);
+
+    Matcher scoringMatcher =
+            scoringHeading.matcher(content);
+
+    if (!questionsMatcher.find() ||
+            !answerMatcher.find() ||
+            !scoringMatcher.find()) {
+
+        System.out.println(
+                "ASSESSMENT DEBUG | Missing required sections"
+        );
+
+        return false;
+    }
+
+    if (questionsMatcher.end() > answerMatcher.start() ||
+            answerMatcher.end() > scoringMatcher.start()) {
+        return false;
+    }
+
+    String questionsSection = content.substring(
+            questionsMatcher.end(),
+            answerMatcher.start()
+    );
+
+    String answersSection = content.substring(
+            answerMatcher.end(),
+            scoringMatcher.start()
+    );
+
+    Pattern questionPattern = Pattern.compile(
+            "(?m)^[ \\t]*\\*\\*(\\d+)\\.\\*\\*[ \\t]+\\S"
+    );
+
+    Matcher questionMatcher =
+            questionPattern.matcher(questionsSection);
+
+    int actualCount = 0;
+
+    while (questionMatcher.find()) {
+
+        actualCount++;
+
+        int questionNumber = Integer.parseInt(
+                questionMatcher.group(1)
+        );
+
+        if (questionNumber != actualCount) {
+            return false;
+        }
+    }
+
+    Pattern answerPattern = Pattern.compile(
+            "(?m)^[ \\t]*(?:\\*\\*)?(\\d+)\\."
+            + "(?:\\*\\*)?[ \\t]+\\S"
+    );
+
+    Matcher answersMatcher =
+            answerPattern.matcher(answersSection);
+
+    int answerCount = 0;
+
+    while (answersMatcher.find()) {
+
+        answerCount++;
+
+        int answerNumber = Integer.parseInt(
+                answersMatcher.group(1)
+        );
+
+        if (answerNumber != answerCount) {
+            return false;
+        }
+    }
+
+    System.out.println(
+            "ASSESSMENT DEBUG | Expected: " + expectedCount
+            + " | Generated: " + actualCount
+            + " | Answers: " + answerCount
+    );
+
+    return actualCount == expectedCount
+            && answerCount == expectedCount;
+}
 
     private long calculateWaitMillis(
             HttpClientErrorException.TooManyRequests ex) {

@@ -9,6 +9,225 @@ const IMPACT_LEVELS = [
   'minor',
   'unknown'
 ]
+
+
+
+function getPdfAccessibilityExplanation(item) {
+  const title = String(item.title || '')
+  const description = String(item.description || '')
+  const evidence = Array.isArray(item.evidence)
+    ? item.evidence
+    : []
+
+  const clause = title.match(/PDF\/UA clause\s+([\d.]+)/i)?.[1]
+
+  const pages = [...new Set(
+    evidence
+      .map(entry => Number(entry.page))
+      .filter(page => Number.isInteger(page) && page > 0)
+  )].sort((a, b) => a - b)
+
+  const pageSummary = pages.length
+    ? pages.map(page => {
+        const count = evidence.filter(
+          entry => Number(entry.page) === page
+        ).length
+
+        return `Page ${page}: ${count} affected element${count === 1 ? '' : 's'}`
+      }).join('; ')
+    : 'The issue affects the document or an element whose page could not be determined.'
+
+
+if (title === 'Missing document title') {
+  return {
+    heading: 'Missing PDF Document Title',
+
+    issue: 'The PDF does not contain a meaningful document title in its metadata.',
+
+    reason: 'The accessibility scanner checked the PDF document properties and found that the document title was missing.',
+
+    impact: 'Screen reader users may find it difficult to identify the document, especially when multiple PDFs are open.',
+
+    steps: [
+      'Open the PDF in an editor that supports document metadata.',
+      'Open the document properties.',
+      'Locate the Title field.',
+      'Enter a meaningful document title.',
+      'Ensure the title is also present in XMP dc:title metadata for PDF/UA compliance.',
+      'Save the PDF and run the accessibility scan again.'
+    ],
+
+    verification: 'Check the document properties and confirm that a meaningful title is present. Run the accessibility scan again.',
+
+    pageSummary: 'Document-level issue: PDF metadata. No individual page is associated with this failure.',
+
+    affectedCount: evidence.length
+  }
+}
+
+
+
+if (title === 'Alternative description missing for an annotation') {
+  return {
+    heading: 'Missing Accessible Descriptions for Link Annotations',
+
+    issue: 'The PDF contains annotations that do not provide the alternate descriptions required by the accessibility check.',
+
+    reason: `The accessibility scanner identified ${evidence.length} affected annotations without the required accessible descriptions.`,
+
+    impact: 'People using screen readers may have difficulty understanding the purpose or destination of affected interactive elements.',
+
+    steps: [
+      'Open the PDF in an editor that supports accessibility remediation.',
+      'Locate the affected annotations on the pages listed in the Affected pages section.',
+      'Inspect the annotation properties and associated document tags.',
+      'Add meaningful accessible descriptions using the PDF properties required by the reported rule.',
+      'Ensure each description clearly communicates the purpose of the interactive element.',
+      'Check that link annotations are correctly associated with their Link structure elements.',
+      'Save the corrected PDF and run the accessibility scan again.'
+    ],
+
+    verification: 'Run the accessibility scan again and confirm that the annotation description finding is resolved. Test affected interactive elements with a screen reader.',
+
+    pageSummary,
+    affectedCount: evidence.length
+  }
+}
+
+
+  if (clause === '7.18.1' && /Test 2/i.test(title)) {
+    return {
+      heading: 'Missing Accessible Link or Annotation Description',
+
+      issue:
+        'The document contains annotations, including links, that do not provide the accessible descriptions required by the PDF accessibility standard. These descriptions help assistive technologies communicate information about interactive document elements.',
+
+      reason:
+        'The affected annotations do not contain a meaningful description in their annotation properties or an alternative description in the associated document structure. As a result, the automated accessibility requirement was not satisfied.',
+
+      impact:
+        'People who use screen readers may not receive sufficient information about the affected interactive elements. This can make it more difficult to understand the purpose of a link or navigate the document confidently.',
+
+      steps: [
+        'Open the PDF in an editor that supports accessibility tagging.',
+       'Locate the affected links and annotations on the pages identified in the Affected pages section.',
+        'Inspect the accessibility properties and associated document tags.',
+        'Ensure each affected annotation has an appropriate accessible description using the supported PDF accessibility properties.',
+        'Make sure descriptions accurately communicate the purpose of the interactive element.',
+        'Save the corrected document and run the accessibility scan again.'
+      ],
+
+      verification:
+        'Run the accessibility scan again and confirm that this requirement no longer reports failures. Review the affected links with a screen reader to verify that their purpose is communicated clearly.',
+
+      pageSummary,
+      affectedCount: evidence.length
+    }
+  }
+
+
+
+  if (clause === '5' && /Test 1/i.test(title)) {
+    return {
+      heading: 'Missing PDF/UA Identification Metadata',
+      issue: 'The PDF does not contain the PDF/UA Identification Schema in its XMP metadata. This information identifies the PDF/UA standard and version that the document claims to conform to.',
+      reason: 'The automated validator inspected the document metadata stream and could not find the required PDF/UA Identification Schema.',
+      impact: 'Accessibility validation tools cannot confirm the document’s declared PDF/UA conformance from its metadata. This does not, by itself, establish that the document content is inaccessible, but it prevents this PDF/UA requirement from passing.',
+      steps: [
+        'Open the PDF in an editor or remediation tool that supports PDF/UA metadata.',
+        'Inspect the document properties and XMP metadata.',
+        'Determine the PDF/UA version that the document is intended to conform to.',
+        'Remediate and validate the document against that version before declaring conformance.',
+        'Add the appropriate PDF/UA Identification Schema and required identification properties using a compatible tool.',
+        'Save the PDF and run the accessibility validation again.'
+      ],
+      verification: 'Inspect the XMP metadata and confirm that the appropriate PDF/UA Identification Schema is present. Run the validator again and confirm that Clause 5 — Test 1 passes. Verify all other applicable PDF/UA requirements before claiming full conformance.',
+      pageSummary: 'Document-level issue: XMP metadata. No individual page is associated with this failure.',
+      affectedCount: evidence.length
+    }
+  }
+
+  if (clause === '7.1' && /Test 9/i.test(title)) {
+    return {
+      heading: 'Missing Document Title in XMP Metadata',
+      issue: 'The PDF metadata stream does not contain the required Dublin Core dc:title entry. This entry should clearly identify the document.',
+      reason: 'The automated validator inspected the XMP metadata and found that the dc:title property was missing.',
+      impact: 'A missing metadata title can make it more difficult for users and assistive technologies to identify the document, especially when several PDF documents are open or being managed.',
+      steps: [
+        'Open the PDF in an editor that supports document properties and XMP metadata.',
+        'Open the document properties or metadata settings.',
+        'Enter a meaningful document title, such as "CareerOneStop References".',
+        'Ensure the title is stored in the XMP Dublin Core dc:title property, not only in the PDF document information dictionary.',
+        'Check that the title accurately describes the document.',
+        'Save the PDF and run the accessibility validation again.'
+      ],
+      verification: 'Inspect the XMP metadata and confirm that dc:title contains a meaningful document title. Run the validator again and verify that Clause 7.1 — Test 9 passes.',
+      pageSummary: 'Document-level issue: XMP metadata. No individual page is associated with this failure.',
+      affectedCount: evidence.length
+    }
+  }
+
+  if (clause === '7.18.5' && /Test 2/i.test(title)) {
+    return {
+      heading: 'Missing Alternate Descriptions for Links',
+      issue: 'The document contains link annotations that do not provide alternate descriptions through their /Contents entries. These descriptions are required by the PDF/UA validation rule.',
+reason: evidence.length > 0
+  ? `The automated validator identified ${evidence.length} link annotation${evidence.length === 1 ? '' : 's'} whose /Contents ${evidence.length === 1 ? 'entry does' : 'entries do'} not contain the required alternate descriptions.`
+  : 'The automated validator identified link annotations with missing required alternate descriptions in their /Contents entries.',      impact: 'People using assistive technologies may receive incomplete information about the purpose of affected links. This can make navigation and understanding linked resources more difficult.',
+      steps: [
+        'Open the PDF in an editor that supports link annotations and accessibility remediation.',
+        'Locate the affected links on the pages identified in the Affected pages section.',
+        'Inspect each link annotation and its accessibility properties.',
+        'Provide a meaningful alternate description in the link annotation /Contents entry.',
+        'Ensure each description communicates the destination or purpose of the link.',
+        'Review the associated Link tags and confirm that the annotations are correctly associated with the document structure.',
+        'Save the corrected PDF and run the accessibility validation again.'
+      ],
+      verification: 'Run the PDF/UA validator again and confirm that Clause 7.18.5 — Test 2 passes. Test the affected links with a screen reader and verify that their purposes are communicated clearly.',
+      pageSummary,
+      affectedCount: evidence.length
+    }
+  }
+
+
+  // Other PDF/UA rules: preserve their actual validation
+  // descriptions rather than inventing a specific diagnosis.
+  return {
+    heading: title.replace(
+      /PDF\/UA clause/i,
+      'PDF Accessibility Requirement'
+    ),
+
+    issue:
+      description ||
+      'The document contains an accessibility issue identified during automated PDF validation.',
+
+    reason:
+      evidence.find(entry => entry.issue)?.issue ||
+      description ||
+      'One or more document elements did not satisfy the applicable accessibility requirement.',
+
+    impact:
+      'This issue may affect how assistive technologies interpret or present the document. The exact impact depends on the failed requirement and the affected content.',
+
+    steps: [
+      'Review the accessibility requirement and the reported affected pages.',
+      'Open the document in a PDF editor that supports accessibility remediation.',
+      'Inspect the relevant document content and accessibility properties.',
+      'Correct the underlying issue according to the reported requirement.',
+      'Save the updated PDF and scan it again.'
+    ],
+
+    verification:
+      'Repeat the accessibility validation and confirm that the reported requirement passes. Perform manual assistive technology testing where appropriate.',
+
+    pageSummary,
+    affectedCount: evidence.length
+  }
+}
+
+
+
 function getDocumentFixSteps(item) {
   const name = [
     item.id,
@@ -338,12 +557,23 @@ export default function AccessibilityScanner({
           )
         )
 
-        sheet.columns = headers.map(header => ({
-          width: Math.min(
-            65,
-            Math.max(18, String(header).length + 6)
-          )
-        }))
+        const columnWidths = {
+  'Metric': 30,
+  'Value': 65,
+  'Rule ID': 25,
+  'Rule name': 48,
+  'Severity': 18,
+  'Description': 65,
+  'Selector': 48,
+  'HTML': 65,
+  'Fix / review guidance': 65,
+  'Axe guidance URL': 65,
+'Status': 20,
+}
+
+sheet.columns = headers.map(header => ({
+  width: columnWidths[header] || 25
+}))
 
         sheet.views = [
           { state: 'frozen', ySplit: 1 }
@@ -354,14 +584,70 @@ export default function AccessibilityScanner({
           to: { row: 1, column: headers.length }
         }
 
-        sheet.eachRow((row, index) => {
-          if (index > 1) {
-            row.alignment = {
-              vertical: 'top',
-              wrapText: true
-            }
-          }
-        })
+
+        const statusColumn = headers.indexOf('Status') + 1
+
+if (statusColumn > 0) {
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return
+
+    const cell = row.getCell(statusColumn)
+    const status = String(cell.value || '')
+
+    let background = 'FFFFFFFF'
+    let foreground = 'FF333333'
+
+    if (status === 'Failed') {
+      background = 'FFFCE8E6'
+      foreground = 'FFB42318'
+    } else if (status === 'Passed') {
+      background = 'FFE6F4EA'
+      foreground = 'FF137333'
+    } else if (status === 'Requires Review') {
+      background = 'FFFFF4CE'
+      foreground = 'FF9A6700'
+    }
+
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: background }
+    }
+
+    cell.font = {
+      bold: true,
+      color: { argb: foreground }
+    }
+
+    cell.alignment = {
+      vertical: 'top',
+      horizontal: 'center',
+      wrapText: true
+    }
+  })
+}
+
+       sheet.eachRow((row, index) => {
+  if (index > 1) {
+    row.alignment = {
+      vertical: 'top',
+      wrapText: true
+    }
+
+    const maxLines = Math.max(
+      ...row.values.slice(1).map(value => {
+        const text = String(value ?? '')
+        return text.split('\n').reduce(
+          (total, line) =>
+            total + Math.max(1, Math.ceil(line.length / 55)),
+          0
+        )
+      })
+    )
+
+    row.height = Math.min(180, Math.max(30, maxLines * 16))
+  }
+})
 
         return sheet
       }
@@ -371,50 +657,53 @@ export default function AccessibilityScanner({
           ? report[kind]
           : []
 
-      const flattenRules = kind =>
-        rules(kind).flatMap(rule => {
-          const nodes = Array.isArray(rule.nodes)
-            ? rule.nodes
-            : []
+      
+       const flattenRules = kind => {
+  const status =
+    kind === 'violations'
+      ? 'Failed'
+      : kind === 'passes'
+        ? 'Passed'
+        : kind === 'incomplete'
+          ? 'Requires Review'
+          : 'Unknown'
 
-          if (!nodes.length) {
-            return [[
-              rule.id,
-              rule.help,
-              rule.impact,
-              rule.description,
-              '',
-              '',
-              '',
-              rule.helpUrl
-            ]]
-          }
+  return rules(kind).flatMap(rule => {
+    const nodes = Array.isArray(rule.nodes)
+      ? rule.nodes
+      : []
 
-          return nodes.map(node => [
-            rule.id,
-            rule.help,
-            rule.impact,
-            rule.description,
-            Array.isArray(node.target)
-              ? node.target.join(', ')
-              : node.target,
-            node.html,
-            node.failureSummary,
-            rule.helpUrl
-          ])
-        })
+    const makeRow = node => [
+      rule.id,
+      rule.help,
+      status,
+      rule.impact,
+      rule.description,
+      Array.isArray(node?.target)
+        ? node.target.join(', ')
+        : node?.target || '',
+      node?.html || '',
+      node?.failureSummary || '',
+      rule.helpUrl
+    ]
 
-      const headers = [
-        'Rule ID',
-        'Rule name',
-        'Severity',
-        'Description',
-        'Selector',
-        'HTML',
-        'Fix / review guidance',
-        'Axe guidance URL'
-      ]
-
+    return nodes.length
+      ? nodes.map(makeRow)
+      : [makeRow(null)]
+  })
+}
+     
+const headers = [
+  'Rule ID',
+  'Rule name',
+  'Status',
+  'Severity',
+  'Description',
+  'Selector',
+  'HTML',
+  'Fix / review guidance',
+  'Axe guidance URL'
+]
       const violationRules = rules('violations')
 
       const affected = violationRules.reduce(
@@ -472,9 +761,9 @@ export default function AccessibilityScanner({
       addSheet(
         'Affected Elements',
         headers,
-        flattenRules('violations').filter(
-          row => row[4]
-        )
+       flattenRules('violations').filter(
+  row => row[5]
+)
       )
 
       addSheet(
@@ -1163,13 +1452,26 @@ export default function AccessibilityScanner({
             </p>
 
             {node.failureSummary && (
-              <p>
-                <strong>Details: </strong>
-                {node.failureSummary}
-              </p>
-            )}
+  <p>
+    <strong>Details: </strong>
+    {String(node.failureSummary)
+      .split(/<[^>]+>/g)
+      .map(text => text.trim())
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')}
+  </p>
+)}
 
-            {node.html && <pre>{node.html}</pre>}
+{node.html && (
+  <details className="a11y-technical-html">
+    <summary>View Technical HTML</summary>
+
+    <pre>
+      <code>{node.html}</code>
+    </pre>
+  </details>
+)}
           </div>
         ))}
 
@@ -1502,9 +1804,11 @@ export default function AccessibilityScanner({
                   aria-label="Document report view"
                 >
                   {[
-                    ['results', 'Accessibility Results'],
-                    ['preview', 'Screen Reader Preview']
-                  ].map(([id, label]) => (
+  ['results', 'Accessibility Results'],
+  ['pdf-report', 'PDF Report'],
+  ['detail', 'Results in Detail'],
+  ['preview', 'Screen Reader Preview']
+].map(([id, label]) => (
                     <button
                       key={id}
                       type="button"
@@ -1518,6 +1822,189 @@ export default function AccessibilityScanner({
                     </button>
                   ))}
                 </div>
+
+
+                {documentTab === 'pdf-report' && (
+  <div className="a11y-pac-groups">
+    <h3>PDF Accessibility Report</h3>
+
+    <p>
+      <strong>Document:</strong>{' '}
+      {documentReport.filename}
+    </p>
+
+    <p>
+      <strong>Pages:</strong>{' '}
+      {documentReport.pageCount ?? 'Not available'}
+    </p>
+
+    <p>
+      <strong>Assessment:</strong>{' '}
+      {counts.failed > 0
+        ? 'Accessibility issues detected'
+        : 'No automated failures detected'}
+    </p>
+
+    <p>
+      Results are based on Enablr AI accessibility checks.
+      They do not establish PAC or PDF/UA certification.
+    </p>
+
+    <table className="a11y-report-table">
+      <thead>
+        <tr>
+          <th>Checkpoint</th>
+          <th>Passed</th>
+          <th>Warnings</th>
+          <th>Failed</th>
+          <th>Manual Review</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {[...new Set(
+          findings.map(item => item.category || 'General')
+        )].map(category => {
+          const items = findings.filter(
+            item => (item.category || 'General') === category
+          )
+
+          return (
+            <tr key={category}>
+              <td>{category}</td>
+              <td>{items.filter(item => item.status === 'passed').length}</td>
+              <td>{items.filter(item => item.status === 'warning').length}</td>
+              <td>{items.filter(item => item.status === 'failed').length}</td>
+              <td>{items.filter(item => item.status === 'manual').length}</td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
+  </div>
+)}
+
+
+{documentTab === 'detail' && (
+  <div className="a11y-pac-groups">
+    <h3>Results in Detail</h3>
+
+    <p className="a11y-help">
+      Expand a checkpoint to review its accessibility
+      findings and supporting evidence.
+    </p>
+
+    {[...new Set(
+      findings.map(item => item.category || 'General')
+    )].map(category => {
+      const items = findings.filter(
+        item => (item.category || 'General') === category
+      )
+
+      return (
+        <details
+          key={category}
+          className="a11y-pac-group"
+          open
+        >
+          <summary>
+            <strong>{category}</strong>
+            <span>{items.length} checks</span>
+          </summary>
+
+          {items.map((item, index) => {
+            const explanation =
+              documentReport.documentType === 'pdf' &&
+              item.status === 'failed'
+                ? getPdfAccessibilityExplanation(item)
+                : null
+
+            const evidence = Array.isArray(item.evidence)
+              ? item.evidence
+              : []
+
+            const pages = [...new Set(
+              evidence
+                .map(entry => Number(entry.page))
+                .filter(page =>
+                  Number.isInteger(page) && page > 0
+                )
+            )].sort((a, b) => a - b)
+
+            return (
+              <details
+                key={`${item.id || item.title}-${index}`}
+                className="a11y-pac-check"
+              >
+                <summary>
+                  <span>{item.title || item.id}</span>
+                  <span className="a11y-doc-status">
+                    {item.status}
+                  </span>
+                </summary>
+
+                <div className="a11y-pac-detail">
+                  <p>
+                    <strong>Description:</strong>{' '}
+                    {explanation?.issue ||
+                      item.description ||
+                      'No description available.'}
+                  </p>
+
+                  {explanation?.reason && (
+                    <p>
+                      <strong>Why this failed:</strong>{' '}
+                      {explanation.reason}
+                    </p>
+                  )}
+
+                  <p>
+                    <strong>Affected pages:</strong>{' '}
+                    {pages.length
+                      ? pages.join(', ')
+                      : 'Not specified'}
+                  </p>
+
+                  {evidence.length > 0 && (
+                    <p>
+                      <strong>Evidence:</strong>{' '}
+                      {evidence.length} reported item(s)
+                    </p>
+                  )}
+
+                  {explanation?.steps?.length > 0 && (
+                    <div>
+                      <strong>How to fix:</strong>
+                      <ol>
+                        {explanation.steps.map((step, i) => (
+                          <li key={i}>{step}</li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+
+                  {explanation?.verification && (
+                    <p>
+                      <strong>Verification:</strong>{' '}
+                      {explanation.verification}
+                    </p>
+                  )}
+
+                  {!explanation && item.guidance && (
+                    <p>
+                      <strong>Guidance:</strong>{' '}
+                      {item.guidance}
+                    </p>
+                  )}
+                </div>
+              </details>
+            )
+          })}
+        </details>
+      )
+    })}
+  </div>
+)}
 
                 {documentTab === 'results' && (
                   <>
@@ -1608,78 +2095,143 @@ export default function AccessibilityScanner({
                                 </summary>
 
                                 <div className="a11y-pac-detail">
-                                  <p>{item.description}</p>
 
-                                  <p>
-                                    <strong>Location: </strong>
-                                    {item.location || 'Document'}
-                                  </p>
 
-                                  {(item.fix || item.guidance) && (
-                                    <p>
-                                      <strong>
-                                        Recommended fix:
-                                      </strong>
-                                      {' '}
-                                      {item.fix || item.guidance}
-                                    </p>
-                                  )}
-                                 {['failed', 'warning', 'manual'].includes(item.status) && (
-  <details className="a11y-fix-steps">
-    <summary>How to fix — Step by Step</summary>
+{documentReport.documentType === 'pdf' &&
+  item.status === 'failed' &&
+  
+(
+  item.title?.startsWith('PDF/UA clause') ||
+  item.title === 'Missing document title' ||
+  item.title === 'Alternative description missing for an annotation'
+) && (() => {
 
-    <ol>
-      {getDocumentFixSteps(item).map((step, index) => (
-        <li key={index}>{step}</li>
-      ))}
-    </ol>
+    const explanation = getPdfAccessibilityExplanation(item)
 
-    {/* {item.status === 'manual' && (
+    return (
+      <div className="a11y-pdf-explanation">
+        <h4>{explanation.heading}</h4>
+
+        <p>
+          <strong>What is the issue?</strong>
+        </p>
+        <p>{explanation.issue}</p>
+
+        <p>
+          <strong>Why did this fail?</strong>
+        </p>
+        <p>{explanation.reason}</p>
+
+        <p>
+          <strong>Accessibility impact</strong>
+        </p>
+        <p>{explanation.impact}</p>
+
+        <p>
+          <strong>Affected pages</strong>
+        </p>
+        <p>{explanation.pageSummary}</p>
+
+        <details className="a11y-fix-steps">
+          <summary>How to fix — Step by Step</summary>
+          <ol>
+            {explanation.steps.map((step, index) => (
+              <li key={index}>{step}</li>
+            ))}
+          </ol>
+        </details>
+
+        <p>
+          <strong>How to verify the fix</strong>
+        </p>
+        <p>{explanation.verification}</p>
+      </div>
+    )
+  })()}
+                    
+
+                                
+
+{!(
+  documentReport.documentType === 'pdf' &&
+  item.status === 'failed' &&
+  (
+    item.title?.startsWith('PDF/UA clause') ||
+    item.title === 'Missing document title' ||
+    item.title === 'Alternative description missing for an annotation'
+  )
+) && (
+
+  <>
+    <p>{item.description}</p>
+
+    <p>
+      <strong>Location: </strong>
+      {item.location || 'Document'}
+    </p>
+
+    {(item.fix || item.guidance) && (
       <p>
-        Manual verification required. This is not a confirmed failure.
+        <strong>Recommended fix: </strong>
+        {item.fix || item.guidance}
       </p>
-    )} */}
-  </details>
+    )}
+
+    {['failed', 'warning', 'manual'].includes(item.status) && (
+      <details className="a11y-fix-steps">
+        <summary>How to fix — Step by Step</summary>
+
+        <ol>
+          {getDocumentFixSteps(item).map((step, index) => (
+            <li key={index}>{step}</li>
+          ))}
+        </ol>
+      </details>
+    )}
+  </>
 )}
 
-                                  {Array.isArray(item.evidence) &&
-                                    item.evidence.length > 0 && (
-                                      <>
-                                        <strong>
-                                          Affected elements (
-                                          {item.evidence.length})
-                                        </strong>
+{Array.isArray(item.evidence) &&
+  item.evidence.length > 0 &&
+  
+!(
+  documentReport.documentType === 'pdf' &&
+  item.status === 'failed' &&
+  (
+    item.title?.startsWith('PDF/UA clause') ||
+    item.title === 'Missing document title' ||
+    item.title === 'Alternative description missing for an annotation'
+  )
+) && (
 
-                                        <ul>
-                                          {item.evidence
-                                            .slice(0, 100)
-                                            .map((e, i) => (
-                                              <li key={i}>
-                                                {[
-                                                  e.location,
-                                                  e.issue,
-                                                  e.text,
-                                                  e.name,
-                                                  e.level
-                                                    ? `Heading ${e.level}`
-                                                    : ''
-                                                ]
-                                                  .filter(Boolean)
-                                                  .join(' · ') ||
-                                                  JSON.stringify(e)}
-                                              </li>
-                                            ))}
-                                        </ul>
+    <>
+      <strong>
+        Affected elements ({item.evidence.length})
+      </strong>
 
-                                        {item.evidence.length > 100 && (
-                                          <p>
-                                            Showing first 100 items;
-                                            download JSON for all evidence.
-                                          </p>
-                                        )}
-                                      </>
-                                    )}
-                                </div>
+      <ul>
+        {item.evidence.slice(0, 100).map((e, i) => (
+          <li key={i}>
+            <strong>
+              {e.page != null
+                ? `Page ${e.page}`
+                : 'Document'}
+            </strong>
+
+            <p>
+              {e.issue ||
+                e.text ||
+                e.name ||
+                'Accessibility issue detected.'}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </>
+  )}
+
+</div>
+
                               </details>
                             ))}
                           </details>

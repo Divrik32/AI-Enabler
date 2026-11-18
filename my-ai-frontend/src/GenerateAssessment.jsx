@@ -105,6 +105,23 @@ function GenerateAssessment({
     }
 
 
+
+    const baseQuestions = Math.floor(
+  count / selectedQuestionTypes.length
+)
+
+const remainingQuestions =
+  count % selectedQuestionTypes.length
+
+const exactQuestionDistribution = selectedQuestionTypes
+  .map((type, index) => {
+    const quantity =
+      baseQuestions + (index < remainingQuestions ? 1 : 0)
+
+    return `${type}: exactly ${quantity} questions`
+  })
+  .join('\n')
+
 const prompt = `
 Create ONE combined educational or skills assessment.
 
@@ -134,8 +151,37 @@ IMPORTANT ASSESSMENT RULES:
     addition and subtraction.
 11. Use ONLY the selected question types.
 12. Include every selected question type at least once.
-13. Distribute questions approximately evenly across types.
+13. Follow this EXACT question distribution:
+
+${exactQuestionDistribution}
+
+The total of all sections MUST equal ${count}.
+Do not generate fewer or more questions in any section.
 14. Number all questions sequentially from 1 to ${count}.
+
+MANDATORY QUESTION NUMBERING FORMAT:
+
+- Format every main question exactly as:
+  **1.** Question text
+  **2.** Question text
+  **3.** Question text
+
+- Continue this format up to **${count}.**
+- Do NOT use plain numbering for main questions.
+- Use plain numbering for internal Matching column items.
+- Do NOT count Matching column items as separate questions.
+- Every main question must start on a new line.
+- In the Answer Key, use one numbered answer per question.
+- The Answer Key must contain exactly ${count} answers.
+- Use these exact mandatory section headings:
+
+  ## Assessment Overview
+  ## Questions
+  ## Answer Key
+  ## Scoring Guidelines
+
+- Never stop before completing all ${count} questions,
+  all ${count} answers and the Scoring Guidelines.
 15. Count each matching exercise as ONE question.
 16. Avoid duplicate or ambiguous questions.
 17. Provide a correct Answer Key and Scoring Guidelines.
