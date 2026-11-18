@@ -37,14 +37,15 @@ async function runPdfUaValidation(filePath) {
         `""${validatorPath}" --flavour ua1 --format json --nonpdfext --maxfailuresdisplayed -1 "${filePath}""`
       ]
     : [
-        '--flavour',
-        'ua1',
-        '--format',
-        'json',
-        '--maxfailuresdisplayed',
-        '-1',
-        filePath
-      ],
+    '--flavour',
+    'ua1',
+    '--format',
+    'json',
+    '--nonpdfext',
+    '--maxfailuresdisplayed',
+    '-1',
+    filePath
+  ],
   {
     timeout: 120000,
     maxBuffer: 50 * 1024 * 1024,
