@@ -12,23 +12,34 @@ import com.myai.my_ai_assistant.repository.ConversationRepository;
 import jakarta.persistence.EntityManager;
 import com.myai.my_ai_assistant.repository.MessageRepository;
 
+
+import com.myai.my_ai_assistant.repository.WritingJobRepository;
+import com.myai.my_ai_assistant.repository.WritingPartRepository;
+
 @Service
 public class ConversationService {
 
 	private final ConversationRepository conversationRepository;
 	private final MessageRepository messageRepository;
 	private final EntityManager entityManager;
+	
+	
+	private final WritingJobRepository writingJobRepository;
+	private final WritingPartRepository writingPartRepository;
 
 	public ConversationService(
 	        ConversationRepository conversationRepository,
 	        MessageRepository messageRepository,
-	        EntityManager entityManager) {
+	        EntityManager entityManager,
+	        WritingJobRepository writingJobRepository,
+	        WritingPartRepository writingPartRepository) {
 
 	    this.conversationRepository = conversationRepository;
 	    this.messageRepository = messageRepository;
 	    this.entityManager = entityManager;
+	    this.writingJobRepository = writingJobRepository;
+	    this.writingPartRepository = writingPartRepository;
 	}
-
     @Transactional
     public Conversation createConversation(
             User user,
@@ -134,7 +145,7 @@ public void deleteConversation(Long conversationId, User user) {
                     )
             );
 
-    // Verify that the conversation belongs to the logged-in user.
+    // Verify conversation ownership.
     if (!conversation.getUser().getUserId().equals(user.getUserId())) {
         throw new org.springframework.web.server.ResponseStatusException(
                 org.springframework.http.HttpStatus.NOT_FOUND,
@@ -142,11 +153,23 @@ public void deleteConversation(Long conversationId, User user) {
         );
     }
 
-    // First delete all messages from the conversation.
+    // 1. Delete writing parts first.
+    writingPartRepository.deleteByConversationId(conversationId);
+
+    // 2. Delete writing jobs.
+    writingJobRepository.deleteByConversationId(conversationId);
+
+    // 3. Delete messages.
     messageRepository.deleteByConversation(conversation);
 
-    // Then delete the conversation itself.
+    // 4. Flush pending message deletions before deleting parent.
+    entityManager.flush();
+
+    // 5. Delete conversation.
     conversationRepository.delete(conversation);
+
+    // 6. Execute SQL now so FK errors are caught in transaction.
+    entityManager.flush();
 }
 
 
