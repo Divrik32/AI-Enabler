@@ -968,8 +968,13 @@ useEffect(() => {
      const data = await response.json()
 
 
+const loadedConversations = (Array.isArray(data) ? data : [])
+  .sort((a, b) => {
+    const dateA = new Date(a.updatedDate || a.createdDate).getTime()
+    const dateB = new Date(b.updatedDate || b.createdDate).getTime()
 
-const loadedConversations = Array.isArray(data) ? data : []
+    return dateB - dateA
+  })
 
 
 
