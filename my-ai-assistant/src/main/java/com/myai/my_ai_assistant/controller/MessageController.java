@@ -1327,4 +1327,105 @@ public MessageResponse editMessage(
     );
 }
 
+
+@PutMapping(
+        value = "/{conversationId}/messages/{messageId}/generated-image",
+        consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+)
+public MessageResponse editGeneratedImage(
+        @PathVariable Long conversationId,
+        @PathVariable Long messageId,
+        @RequestParam("file") MultipartFile file,
+        @RequestParam("prompt") String prompt,
+        Authentication authentication) {
+
+    if (authentication == null || !authentication.isAuthenticated()) {
+        throw new ResponseStatusException(
+                HttpStatus.UNAUTHORIZED,
+                "Authentication required."
+        );
+    }
+
+    User user = userRepository
+            .findByUsername(authentication.getName())
+            .orElseThrow(() -> new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "User not found."
+            ));
+
+    Conversation conversation = conversationRepository
+            .findById(conversationId)
+            .orElseThrow(() -> new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Conversation not found."
+            ));
+
+    if (!conversation.getUser().getUserId()
+            .equals(user.getUserId())) {
+        throw new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Conversation not found."
+        );
+    }
+
+    if (prompt == null || prompt.isBlank()) {
+        throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Image prompt cannot be empty."
+        );
+    }
+
+    if (file == null || file.isEmpty()) {
+        throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Generated image cannot be empty."
+        );
+    }
+
+    if (file.getSize() > 4L * 1024 * 1024) {
+        throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Image must not exceed 4 MB."
+        );
+    }
+
+    if (!MediaType.IMAGE_PNG_VALUE.equalsIgnoreCase(
+            file.getContentType())) {
+        throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Only PNG images are supported."
+        );
+    }
+
+    try {
+        Message aiMessage = messageService.editGeneratedImageMessage(
+                conversation,
+                messageId,
+                prompt.trim(),
+                file.getBytes()
+        );
+
+        return new MessageResponse(
+                aiMessage.getMessageId(),
+                conversation.getConversationId(),
+                aiMessage.getRole(),
+                aiMessage.getContent(),
+                aiMessage.getCreatedDate()
+        );
+
+    } catch (IllegalArgumentException ex) {
+        throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+
+    } catch (IOException ex) {
+        throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Unable to read generated image.",
+                ex
+        );
+    }
+}
+
 }

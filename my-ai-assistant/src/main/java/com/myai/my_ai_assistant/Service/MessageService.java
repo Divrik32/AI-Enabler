@@ -661,4 +661,97 @@ public Message editUserMessage(
     return messageRepository.save(aiMessage);
 }
 
+
+@Transactional
+public Message editGeneratedImageMessage(
+        Conversation conversation,
+        Long messageId,
+        String updatedPrompt,
+        byte[] generatedImageBytes) {
+
+    if (updatedPrompt == null || updatedPrompt.isBlank()) {
+        throw new IllegalArgumentException(
+                "Image prompt cannot be empty.");
+    }
+
+    if (generatedImageBytes == null
+            || generatedImageBytes.length == 0
+            || generatedImageBytes.length > 4L * 1024 * 1024) {
+        throw new IllegalArgumentException(
+                "Generated image must be between 1 byte and 4 MB.");
+    }
+
+    Message userMessage = messageRepository.findById(messageId)
+            .orElseThrow(() ->
+                    new IllegalArgumentException("Message not found."));
+
+    if (!userMessage.getConversation().getConversationId()
+            .equals(conversation.getConversationId())) {
+        throw new IllegalArgumentException(
+                "Message does not belong to this conversation.");
+    }
+
+    if (userMessage.getRole() != MessageRole.USER) {
+        throw new IllegalArgumentException(
+                "Only user prompts can be edited.");
+    }
+
+    List<Message> history = getConversationMessages(conversation);
+
+    int userIndex = -1;
+
+    for (int i = 0; i < history.size(); i++) {
+        if (history.get(i).getMessageId().equals(messageId)) {
+            userIndex = i;
+            break;
+        }
+    }
+
+    if (userIndex < 0 || userIndex + 1 >= history.size()) {
+        throw new IllegalArgumentException(
+                "Generated image response not found.");
+    }
+
+    Message imageMessage = history.get(userIndex + 1);
+
+    if (imageMessage.getRole() != MessageRole.AI
+            || imageMessage.getContent() == null
+            || !imageMessage.getContent().matches(
+                    "(?s)^\\[Generated image ID:\\s*\\d+\\].*")) {
+        throw new IllegalArgumentException(
+                "This message is not linked to a generated image.");
+    }
+
+    // Preserve the existing image record for history.
+    ConversationImage newImage = saveConversationImage(
+            conversation,
+            "generated-image.png",
+            "image/png",
+            generatedImageBytes
+    );
+
+    // Update the existing USER message.
+    userMessage.setContent(updatedPrompt.trim());
+    messageRepository.save(userMessage);
+
+    // Update the existing AI image message.
+    imageMessage.setContent(
+            "[Generated image ID: " + newImage.getImageId() + "]"
+    );
+    messageRepository.save(imageMessage);
+
+    // Update conversation title only for the first message.
+    if (userIndex == 0) {
+        String title = updatedPrompt.trim();
+
+        conversation.setTitle(
+                title.length() > 60
+                        ? title.substring(0, 60)
+                        : title
+        );
+    }
+
+    return imageMessage;
+}
+
 }

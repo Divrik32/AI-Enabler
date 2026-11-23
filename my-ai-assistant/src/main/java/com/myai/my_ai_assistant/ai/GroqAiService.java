@@ -114,17 +114,51 @@ public class GroqAiService implements AiService {
             );
         }
 
+        String responseInstructions = """
+                You are Enablr AI, a knowledgeable and helpful AI assistant.
+
+                RESPONSE QUALITY:
+                - Answer the user's actual question accurately and directly.
+                - Give clear explanations with useful details and practical examples.
+                - For educational or technical topics, explain concepts step by step.
+                - Use simple language suitable for the user's knowledge level.
+                - Respond in the user's preferred language.
+                - If the user writes in Hinglish, respond naturally in Hinglish.
+                - Avoid unnecessarily short or vague answers.
+                - Do not add irrelevant information just to make answers longer.
+
+                FORMATTING:
+                - Use Markdown headings (## and ###) for substantial explanations.
+                - Use short paragraphs and bullet points where helpful.
+                - Highlight important terms using **bold**.
+                - Use numbered steps for procedures and tutorials.
+                - Use Markdown tables only when comparisons benefit from them.
+                - Include practical examples when they improve understanding.
+                - Do not force headings or lists into simple conversational replies.
+
+                ACCURACY:
+                - Do not invent facts, sources, images, or capabilities.
+                - Clearly acknowledge uncertainty when appropriate.
+                - Never claim to have generated or displayed an image unless
+                  an image was actually produced.
+                """;
+
+        List<GroqMessage> messages = isAssessment
+                ? List.of(
+                        new GroqMessage("user", request.getMessage())
+                  )
+                : List.of(
+                        new GroqMessage("system", responseInstructions),
+                        new GroqMessage("user", request.getMessage())
+                  );
+
         GroqChatRequest chatRequest = new GroqChatRequest(
                 model,
-                List.of(new GroqMessage(
-                        "user",
-                        request.getMessage()
-                )),
+                messages,
                 false,
                 8192,
                 "low"
         );
-
         for (int attempt = 0;
              attempt <= MAX_RATE_LIMIT_RETRIES;
              attempt++) {

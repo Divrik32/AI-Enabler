@@ -471,24 +471,37 @@ function ChatImageThumbnail({
 
 function UserChatMessage({ message, conversationId, token }) {
   const rawContent = String(message.content || '')
-  const isGeneratedImage = /^\[Generated image ID:\s*\d+\]/.test(rawContent)
-  const match = rawContent.match(SAVED_IMAGE_MARKER)
-  const textContent = match ? rawContent.slice(match[0].length) : rawContent
-  const displayText = textContent.trim()
+
+  const imageMatch = rawContent.match(
+    /\[Generated image ID:\s*(\d+)\]/i
+  )
+
+  const savedMatch = rawContent.match(SAVED_IMAGE_MARKER)
+
+  const match = imageMatch || savedMatch
+
+  const isGeneratedImage = Boolean(imageMatch)
+
+  const displayText = rawContent
+    .replace(/\[Generated image ID:\s*\d+\]/gi, '')
+    .replace(SAVED_IMAGE_MARKER, '')
+    .trim()
+
   const hasImage = Boolean(match || message.pendingImageFile)
+
   return (
     <>
       {hasImage && (
         <ChatImageThumbnail
-
-        isGenerated={isGeneratedImage}
+          isGenerated={isGeneratedImage}
           conversationId={conversationId}
           imageId={match?.[1]}
           token={token}
           localFile={message.pendingImageFile}
         />
       )}
-     {displayText && <p>{displayText}</p>}
+
+      {displayText && <p>{displayText}</p>}
     </>
   )
 }
@@ -657,7 +670,9 @@ const [savingEditedMessage, setSavingEditedMessage] = useState(false)
 const chatScrollRef = useRef(null)
 
 // Sidebar Hide / Show
-const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+const [isSidebarOpen, setIsSidebarOpen] = useState(
+  () => window.innerWidth > 768
+)
 const [showScrollToBottom, setShowScrollToBottom] = useState(false)
 
 const handleChatScroll = () => {
@@ -816,6 +831,21 @@ useEffect(() => {
   const [input, setInput] = useState('')
 
 
+  useEffect(() => {
+  const textarea = textareaRef.current
+  if (!textarea) return
+
+  textarea.style.height = 'auto'
+
+ const maxHeight = 180
+  const newHeight = Math.min(textarea.scrollHeight, maxHeight)
+
+  textarea.style.height = `${newHeight}px`
+  textarea.style.overflowY =
+    textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
+}, [input])
+
+
 
   const [selectedFiles, setSelectedFiles] = useState([])
 
@@ -844,6 +874,22 @@ useEffect(() => {
 
 
   const textareaRef = useRef(null)
+
+
+
+  useEffect(() => {
+  const textarea = textareaRef.current;
+  if (!textarea) return;
+
+  textarea.style.height = "auto";
+
+  const maxHeight = 100;
+  const height = Math.min(textarea.scrollHeight, maxHeight);
+
+  textarea.style.height = `${height}px`;
+  textarea.style.overflowY =
+    textarea.scrollHeight > maxHeight ? "scroll" : "hidden";
+}, [input]);
 
 
 
@@ -3623,6 +3669,62 @@ async function generateCloudflareImage(prompt) {
 }
 
 
+async function editCloudflareImage(prompt, originalImageBlob) {
+  if (!auth?.token) {
+    throw new Error('Please log in again.')
+  }
+
+  if (!originalImageBlob?.size) {
+    throw new Error('Original image is required.')
+  }
+
+  const cleanPrompt = String(prompt || '').trim()
+
+  if (!cleanPrompt) {
+    throw new Error('Please enter an image editing instruction.')
+  }
+
+  const formData = new FormData()
+
+  formData.append('prompt', cleanPrompt)
+
+  formData.append(
+    'file',
+    originalImageBlob,
+    'original-image.png'
+  )
+
+  const response = await fetch(
+    'http://localhost:8080/api/images/edit',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${auth.token}`,
+        Accept: 'image/png'
+      },
+      body: formData
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      `Image editing failed (${response.status})`
+    )
+  }
+
+  const editedImageBlob = await response.blob()
+
+  if (
+    !editedImageBlob.size ||
+    editedImageBlob.type !== 'image/png'
+  ) {
+    throw new Error('Server returned an invalid edited image.')
+  }
+
+  return editedImageBlob
+}
+
+
 async function saveGeneratedImage(
   conversationId,
   imageBlob,
@@ -3686,8 +3788,13 @@ if (generatingImage || sendingMessage) {
 
   const imagePrompt = String(assessmentPrompt ?? input ?? '').trim()
 
+const isImageEditInstruction =
+  /\b(?:change|replace|modify|edit|remove|recolor|make)\b/i.test(imagePrompt) &&
+  /\b(?:background|colour|color|image|picture|photo)\b/i.test(imagePrompt)
+
 if (
   assessmentPrompt === null &&
+  !isImageEditInstruction &&
   isImageGenerationRequest(imagePrompt) &&
   selectedFiles.length === 0
 ) {
@@ -4281,6 +4388,78 @@ if (isImageUpload) {
   )
 
 
+  } else if (
+  filesToSend.length === 0 &&
+  content &&
+  /\b(?:change|replace|modify|edit|remove|recolor|make)\b/i.test(content) &&
+  /\b(?:background|colour|color|image|picture|photo)\b/i.test(content)
+) {
+  const imageMessage = [...messages]
+    .reverse()
+    .find(message =>
+      message.role?.toLowerCase() !== 'user' &&
+      /\[Generated image ID:\s*\d+\]/i.test(
+        String(message.content || '')
+      )
+    )
+
+  if (!imageMessage) {
+    throw new Error(
+      'No generated image found in this conversation to edit.'
+    )
+  }
+
+  const imageMatch = String(imageMessage.content).match(
+    /\[Generated image ID:\s*(\d+)\]/i
+  )
+
+  const originalResponse = await fetch(
+    `http://localhost:8080/api/conversations/${conversationId}/images/${imageMatch[1]}`,
+    {
+      headers: {
+        Authorization: `Bearer ${auth.token}`
+      }
+    }
+  )
+
+  if (!originalResponse.ok) {
+    throw new Error(
+      `Original image could not be loaded (${originalResponse.status})`
+    )
+  }
+
+  const originalImageBlob = await originalResponse.blob()
+
+  const editedImageBlob = await editCloudflareImage(
+    content,
+    originalImageBlob
+  )
+
+  await saveGeneratedImage(
+    conversationId,
+    editedImageBlob,
+    content
+  )
+
+  await openConversation(conversationId)
+
+  const conversationsResponse = await fetch(
+    'http://localhost:8080/api/conversations',
+    {
+      headers: {
+        Authorization: `Bearer ${auth.token}`
+      }
+    }
+  )
+
+  if (conversationsResponse.ok) {
+    setConversations(await conversationsResponse.json())
+  }
+
+  setNotice('')
+  return
+
+
 
 
 
@@ -4581,17 +4760,50 @@ if (activeConversationIdRef.current === conversationId) {
 function handleEditMessage(message) {
   if (savingEditedMessage || sendingMessage || generatingImage) return
 
+  const originalContent = String(message.content || '')
+
   setEditingMessageId(message.id)
-  setEditedMessageText(String(message.content || ''))
+  setEditedMessageText(
+    originalContent.replace(SAVED_IMAGE_MARKER, '').trim()
+  )
   setNotice('')
 }
-
 // Bug 17 - Cancel editing
 function handleCancelEditMessage() {
   if (savingEditedMessage) return
 
   setEditingMessageId(null)
   setEditedMessageText('')
+}
+
+
+async function regenerateEditedImage(conversationId, prompt) {
+  setGeneratingImage(true)
+  setImageGenerationError('')
+
+  try {
+    const imageBlob = await generateCloudflareImage(prompt)
+
+    await saveGeneratedImage(
+      conversationId,
+      imageBlob,
+      prompt
+    )
+
+    await openConversation(conversationId)
+
+    setNotice('Updated image generated successfully.')
+  } catch (error) {
+    console.error('Edited image generation failed:', error)
+
+    setImageGenerationError(
+      error.message || 'Unable to regenerate image.'
+    )
+
+    throw error
+  } finally {
+    setGeneratingImage(false)
+  }
 }
 
 // Bug 17 - Save edited prompt and regenerate AI response
@@ -4613,9 +4825,115 @@ async function handleSaveEditedMessage() {
   if (savingEditedMessage || sendingMessage || generatingImage) return
 
   setSavingEditedMessage(true)
-  setNotice('')
+setNotice('')
 
-  try {
+try {
+  const editIndex = messages.findIndex(
+    message => String(message.id) === String(editingMessageId)
+  )
+
+  const nextMessage = editIndex >= 0
+    ? messages[editIndex + 1]
+    : null
+
+ 
+const imageMatch = String(nextMessage?.content || '').match(
+  /\[Generated image ID:\s*(\d+)\]/i
+)
+
+const isGeneratedImageEdit = Boolean(imageMatch)
+
+
+  if (isGeneratedImageEdit) {
+    setGeneratingImage(true)
+    setImageGenerationError('')
+
+    // Generate the replacement image first.
+    // If generation fails, the original prompt/image remain unchanged.
+  
+if (!imageMatch) {
+  throw new Error('Original generated image ID not found.')
+}
+
+const originalResponse = await fetch(
+  `http://localhost:8080/api/conversations/${conversationId}/images/${imageMatch[1]}`,
+  {
+    headers: {
+      Authorization: `Bearer ${auth.token}`
+    }
+  }
+)
+
+if (!originalResponse.ok) {
+  throw new Error(`Unable to load original image (${originalResponse.status})`)
+}
+
+const originalImageBlob = await originalResponse.blob()
+
+const imageBlob = await editCloudflareImage(
+  updatedText,
+  originalImageBlob
+)
+
+    if (imageBlob.size > 4 * 1024 * 1024) {
+      throw new Error('Generated image exceeds the 4 MB limit.')
+    }
+
+    const formData = new FormData()
+
+    formData.append(
+      'file',
+      new File([imageBlob], 'generated-image.png', {
+        type: 'image/png'
+      })
+    )
+
+    formData.append('prompt', updatedText)
+
+    const imageResponse = await fetch(
+      `http://localhost:8080/api/conversations/${conversationId}/messages/${editingMessageId}/generated-image`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${auth.token}`
+        },
+        body: formData
+      }
+    )
+
+    if (!imageResponse.ok) {
+      const errorText = await imageResponse.text()
+      throw new Error(
+        `Image update failed (${imageResponse.status}): ${errorText}`
+      )
+    }
+
+    setEditingMessageId(null)
+    setEditedMessageText('')
+
+    await openConversation(conversationId)
+
+    const sidebarResponse = await fetch(
+      'http://localhost:8080/api/conversations',
+      {
+        headers: {
+          Authorization: `Bearer ${auth.token}`
+        },
+        cache: 'no-store'
+      }
+    )
+
+    if (sidebarResponse.ok) {
+      const updatedConversations = await sidebarResponse.json()
+
+      if (Array.isArray(updatedConversations)) {
+        setConversations(updatedConversations)
+      }
+    }
+
+    setNotice('Image regenerated successfully.')
+    return
+  }
     const response = await fetch(
       `http://localhost:8080/api/conversations/${conversationId}/messages/${editingMessageId}`,
       {
@@ -4699,9 +5017,11 @@ setNotice('Message updated successfully.')
     console.error('Edit message failed:', error)
     setNotice(error.message || 'Unable to update message.')
   } finally {
-    setSavingEditedMessage(false)
-  }
+  setSavingEditedMessage(false)
+  setGeneratingImage(false)
 }
+}
+
 
 
 
@@ -4720,6 +5040,59 @@ setNotice('Message updated successfully.')
       setNotice('Could not copy message. Please allow clipboard access.')
     }
   }
+
+async function downloadChatImage(message) {
+  try {
+    const content = String(message.content || '')
+
+    const match = content.match(
+      /\[Generated image ID:\s*(\d+)\]/i
+    )
+
+    if (!match) {
+      setNotice('Generated image ID not found.')
+      return
+    }
+
+    const imageId = match[1]
+    const conversationId = message.conversationId || activeConversationId
+
+    if (!conversationId) {
+      setNotice('Conversation ID not found.')
+      return
+    }
+
+    const response = await fetch(
+      `http://localhost:8080/api/conversations/${conversationId}/images/${imageId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${auth.token}`
+        }
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error(`Image download failed (${response.status})`)
+    }
+
+    const blob = await response.blob()
+    const objectUrl = URL.createObjectURL(blob)
+
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = `enablr-image-${imageId}.png`
+
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+
+  } catch (error) {
+    console.error('Image download failed:', error)
+    setNotice(error.message || 'Unable to download image.')
+  }
+}
 
   function handleChatPaste(event) {
     const clipboardItems = Array.from(event.clipboardData?.items || [])
@@ -4969,7 +5342,12 @@ setNotice('Message updated successfully.')
 
 
 
-  const recentChats = conversations
+  const recentChats = [...conversations].sort((a, b) => {
+  const dateA = new Date(a.updatedDate || a.createdDate || 0).getTime()
+  const dateB = new Date(b.updatedDate || b.createdDate || 0).getTime()
+
+  return (dateB || 0) - (dateA || 0)
+})
 
 
 
@@ -5124,6 +5502,10 @@ async function openAccessibilityConversation(conversationId) {
 
 
 async function openConversation(conversationId) {
+
+
+  setSettingsView(false)
+setHelpView(false)
 
   setGeneratedImage(null)
 setGeneratingImage(false)
@@ -5322,18 +5704,20 @@ setImageFollowUpMode(hasUploadedImage)
 
     }
 
-    
-setMessages(
+    setMessages(
   data.map((message) => ({
     id: message.messageId,
+    createdDate: message.createdDate,
     role: /^\[Generated image ID:\s*\d+\]/.test(
       String(message.content || '')
     )
       ? 'assistant'
       : message.role,
     content: message.content,
+   
   }))
 )
+
 
 
 
@@ -5658,24 +6042,13 @@ async function deleteChat(conversation) {
 
 
 
-
-    setConversations((current) =>
-
-
-
-      current.filter(
-
-
-
-        (chat) => chat.conversationId !== conversation.conversationId
-
-
-
-      )
-
-
-
-    )
+setConversations((current) =>
+  current.filter(
+    (chat) =>
+      String(chat.conversationId) !==
+      String(conversation.conversationId)
+  )
+)
 
 
 
@@ -5692,6 +6065,12 @@ async function deleteChat(conversation) {
 
 
       setActiveConversationId(null)
+
+
+      console.log('CHAT TIMESTAMP DEBUG:', data.map(m => ({
+  id: m.messageId,
+  createdDate: m.createdDate
+})))
 
 
 
@@ -6063,17 +6442,32 @@ setSavedAccessibilityScan(null)
   </button>
 )}
 
-{isSidebarOpen && (
-  <div
-    className="sidebar-backdrop"
-    onClick={() => setIsSidebarOpen(false)}
-    aria-hidden="true"
-  />
-)}
+
+<button
+  type="button"
+  className="mobile-sidebar-menu-btn"
+  onClick={() => setIsSidebarOpen((current) => !current)}
+  aria-label={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+  aria-expanded={isSidebarOpen}
+>
+  <i className="fa-solid fa-bars" aria-hidden="true" />
+</button>
+
+
 
 <aside className={`sidebar ${isSidebarOpen ? '' : 'sidebar-hidden'}`}>
 
 
+
+<button
+  type="button"
+  className="sidebar-close-btn"
+  onClick={() => setIsSidebarOpen(false)}
+  title="Hide sidebar"
+  aria-label="Hide sidebar"
+>
+  <i className="fa-solid fa-bars" aria-hidden="true" />
+</button>
 
         <div className="logo-wrap">
 
@@ -6584,63 +6978,12 @@ onClick={() => {
 
 
 
-        <div className="user-profile">
-
-
-
-          <div className="user-info">
-
-
-
-  <div className="user-name">{auth.username}</div>
-
-
-
-  <div className="email">{auth.email}</div>
-
-
-
+       <div className="user-profile">
+  <div className="user-info">
+    <div className="user-name">{auth.username}</div>
+    <div className="email">{auth.email}</div>
+  </div>
 </div>
-
-
-
-          <button
-
-
-
-  className="user-arrow logout-button"
-
-
-
-  type="button"
-
-
-
-  onClick={() => setLogoutConfirmOpen(true)}
-
-
-
-  title="Logout"
-
-
-
-  aria-label="Logout"
-
-
-
->
-
-
-
-  <i className="fa-solid fa-right-from-bracket" aria-hidden="true" />
-
-
-
-</button>
-
-
-
-        </div>
 
 
 
@@ -6776,15 +7119,15 @@ onClick={() => {
 
   {!isEditingProfile ? (
     <>
-      <div className="settings-detail">
-        <span>Username</span>
-        <strong>{auth.username}</strong>
-      </div>
+     <div className="settings-detail">
+  <strong className="settings-detail-label">Username</strong>
+  <span className="settings-detail-value">{auth.username}</span>
+</div>
 
-      <div className="settings-detail">
-        <span>Email Address</span>
-        <strong>{auth.email}</strong>
-      </div>
+<div className="settings-detail">
+  <strong className="settings-detail-label">Email Address</strong>
+  <span className="settings-detail-value">{auth.email}</span>
+</div>
 
       <button
         type="button"
@@ -6860,8 +7203,7 @@ onClick={() => {
 
 
 <div className="settings-detail">
-
-  <span>Theme</span>
+  <strong className="settings-detail-label">Theme</strong>
 
 
 
@@ -7041,21 +7383,7 @@ onClick={() => {
 
 
 
-              <div className="logo-wrap">
-
-
-
-          
-<img
-  src="/my-ai-logo.png"
-  alt="AI Assistant"
-  className="hero-logo"
-/>
-
-
-
-
-        </div>
+       
 
 
 
@@ -7264,17 +7592,23 @@ onClick={() => {
   )
 ) : (
           <>
-            {String(message.content || '').startsWith('[Generated image ID:') ? (
-              <UserChatMessage
-                message={message}
-                conversationId={activeConversationId}
-                token={auth?.token}
-              />
-            ) : (
-              <div id={`assessment-message-${message.id}`}>
-                <AssessmentMarkdown content={message.content} />
-              </div>
-            )}
+           {/\[Generated image ID:\s*\d+\]/i.test(String(message.content || '')) ? (
+  <UserChatMessage
+    message={{
+      ...message,
+      content: String(message.content || '').replace(
+        /([\s\S]*?)(\[Generated image ID:\s*\d+\])/i,
+        '$2\n$1'
+      )
+    }}
+    conversationId={activeConversationId}
+    token={auth?.token}
+  />
+) : (
+  <div id={`assessment-message-${message.id}`}>
+    <AssessmentMarkdown content={message.content} />
+  </div>
+)}
 
             {String(message.content || '').includes('Assessment Overview') && (
               <div className="assessment-download-actions">
@@ -7298,7 +7632,28 @@ onClick={() => {
           </>
         )}
       </div>
+<div className="message-actions">
 
+
+ {(message.createdDate ||
+  message.createdAt ||
+  message.created_at ||
+  message.timestamp) && (
+  <span className="message-time">
+    {new Date(
+      message.createdDate ||
+      message.createdAt ||
+      message.created_at ||
+      message.timestamp
+    ).toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    })}
+  </span>
+)}
 
       {message.role?.toLowerCase() === 'user' &&
   message.id != null &&
@@ -7306,7 +7661,7 @@ onClick={() => {
   !String(message.content || '').includes(
     'Create ONE combined educational or skills assessment.'
   ) &&
-  !isImageGenerationRequest(message.content) && (
+  (
     <button
   type="button"
   onClick={() => handleEditMessage(message)}
@@ -7324,6 +7679,8 @@ onClick={() => {
 </button>
   )}
 
+  
+
       <button
         type="button"
         onClick={() => copyChatMessage(message)}
@@ -7338,6 +7695,33 @@ onClick={() => {
       >
         <i className="fa-regular fa-copy" aria-hidden="true" /> Copy
       </button>
+
+
+      {message.role?.toLowerCase() !== 'user' &&
+  (String(message.content || '').includes('[Generated image ID:') ||
+    String(message.content || '').includes('/images/generated/')) && (
+    <button
+      type="button"
+      onClick={() => downloadChatImage(message)}
+      title="Download image"
+      aria-label="Download generated image"
+      style={{
+        alignSelf: 'flex-start',
+        marginTop: '6px',
+        marginLeft: '8px',
+        padding: '4px 10px',
+        cursor: 'pointer'
+      }}
+    >
+      <i className="fa-solid fa-download" aria-hidden="true" /> Download
+    </button>
+  )}
+
+     
+     
+      </div>
+
+    
     </article>
   ))}
 
@@ -7514,42 +7898,17 @@ onClick={() => {
   </div>
 )}
 
-          <textarea
-
-
-
-            ref={textareaRef}
-
-
-
-            className="message-input"
-
-
-
-            value={input}
-
-
-
-            onChange={(event) => setInput(event.target.value)}
-
-
-
-            onKeyDown={handleKeyDown}
-            onPaste={handleChatPaste}
-
-
-
-            placeholder="How can I help Today!"
-
-
-
-            rows={1}
-
-
-
-            aria-label="Write your message"
-
-          />
+         <textarea
+  ref={textareaRef}
+  className="message-input"
+  value={input}
+  onChange={(event) => setInput(event.target.value)}
+  onKeyDown={handleKeyDown}
+  onPaste={handleChatPaste}
+  placeholder="How can I help Today!"
+  rows={1}
+  aria-label="Write your message"
+/>
 
 
 
