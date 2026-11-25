@@ -6455,6 +6455,15 @@ setSavedAccessibilityScan(null)
 
 
 
+{isSidebarOpen && (
+  <button
+    type="button"
+    className="mobile-sidebar-overlay"
+    onClick={() => setIsSidebarOpen(false)}
+    aria-label="Close sidebar"
+  />
+)}
+
 <aside className={`sidebar ${isSidebarOpen ? '' : 'sidebar-hidden'}`}>
 
 
@@ -6503,7 +6512,13 @@ setSavedAccessibilityScan(null)
 
 
 
-  onClick={startNewChat}
+  onClick={() => {
+  if (window.innerWidth <= 768) {
+    setIsSidebarOpen(false)
+  }
+
+  startNewChat()
+}}
 
 
 
@@ -6653,7 +6668,9 @@ onClick={() => {
 
   setOpenChatMenuId(null)
 
-
+  if (window.innerWidth <= 768) {
+    setIsSidebarOpen(false)
+  }
 
   if (conversation.title?.startsWith('Accessibility - ')) {
 
@@ -6932,6 +6949,9 @@ onClick={() => {
   onClick={() => {
 
     setSettingsView(true)
+    if (window.innerWidth <= 768) {
+  setIsSidebarOpen(false)
+}
     setHelpView(false)
 
     setAccessibilityView(false)
@@ -6963,9 +6983,14 @@ onClick={() => {
     setAccessibilityView(false)
     setAssessmentView(null)
     setNotice('')
+
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false)
+    }
   }}
 >
-  <i className="fa-regular fa-circle-question" aria-hidden="true" /> Help &amp; Updates
+  <i className="fa-regular fa-circle-question" aria-hidden="true" />
+  Help &amp; Updates
 </button>
 
 
