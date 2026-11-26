@@ -508,6 +508,33 @@ function UserChatMessage({ message, conversationId, token }) {
 
 // Detect explicit requests to generate a new image.
 // Ordinary questions about images should continue through normal chat.
+// Detect the number of separate images requested.
+function getRequestedImageCount(text) {
+  const prompt = String(text || '').trim().toLowerCase()
+
+  const numberWords = {
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10
+  }
+
+  const match = prompt.match(
+    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:(?:more|different|separate|new|additional|unique)\s+)*(?:images?|pictures?|photos?|logos?|designs?|variations?|illustrations?)\b/i
+  )
+
+  if (!match) return 1
+
+  const value = match[1].toLowerCase()
+
+  return numberWords[value] ?? Number(value)
+}
 
 function isImageGenerationRequest(text) {
   const prompt = String(text || '').trim()
@@ -525,9 +552,39 @@ function isImageGenerationRequest(text) {
 }
 
 
+function isImageEditingRequest(text, messages = []) {
+  const prompt = String(text || '').trim()
+
+  if (!prompt) return false
+
+  // Check whether this conversation has a generated image.
+  const hasGeneratedImage = messages.some(message =>
+    message.role?.toLowerCase() !== 'user' &&
+    /\[Generated image ID:\s*\d+\]/i.test(
+      String(message.content || '')
+    )
+  )
+
+  if (!hasGeneratedImage) return false
+
+  // Keep informational questions in normal chat.
+  if (
+    /^(?:how|why|what|when|where|explain|describe|analyze|analyse|tell me)\b/i.test(prompt)
+  ) {
+    return false
+  }
+
+  // Detect image modification instructions.
+  return /^(?:(?:please|now|then|just|also)\s+)*(?:(?:can|could|would)\s+you\s+)?(?:add|insert|put|place|change|replace|modify|edit|remove|delete|erase|recolor|recolour|make|keep|adjust|enhance|improve|resize|crop|rotate|blur|sharpen|brighten|darken|convert|regenerate|redesign|update|transform|fix|move)\b/i.test(
+    prompt
+  )
+}
+
+
 // Keep the login active across refreshes in the same browser tab.
 // Session storage is cleared when the tab session ends; never store passwords.
 const AUTH_STORAGE_KEY = 'myai-auth-session'
+
 
 function isAuthSessionValid(session) {
   if (!session || typeof session.token !== 'string' || !session.token.trim()) return false
@@ -745,6 +802,7 @@ useEffect(() => {
   // Cloudflare generated image state
 const [generatedImage, setGeneratedImage] = useState(null)
 const [generatingImage, setGeneratingImage] = useState(false)
+const [imageGenerationProgress, setImageGenerationProgress] = useState('')
 const [imageGenerationError, setImageGenerationError] = useState('')
 
 const [writingJob, setWritingJob] = useState(null)
@@ -3728,7 +3786,8 @@ async function editCloudflareImage(prompt, originalImageBlob) {
 async function saveGeneratedImage(
   conversationId,
   imageBlob,
-  prompt
+  prompt,
+  savePrompt = true
 ) {
   if (!conversationId) {
     throw new Error('Conversation ID is missing.')
@@ -3752,8 +3811,11 @@ async function saveGeneratedImage(
     { type: 'image/png' }
   )
 
+  // formData.append('file', imageFile)
+  // formData.append('prompt', prompt)
   formData.append('file', imageFile)
-  formData.append('prompt', prompt)
+formData.append('prompt', prompt)
+formData.append('savePrompt', String(savePrompt))
 
   const response = await fetch(
     `http://localhost:8080/api/conversations/${conversationId}/images/generated`,
@@ -3789,8 +3851,9 @@ if (generatingImage || sendingMessage) {
   const imagePrompt = String(assessmentPrompt ?? input ?? '').trim()
 
 const isImageEditInstruction =
-  /\b(?:change|replace|modify|edit|remove|recolor|make)\b/i.test(imagePrompt) &&
-  /\b(?:background|colour|color|image|picture|photo)\b/i.test(imagePrompt)
+  assessmentPrompt === null &&
+  selectedFiles.length === 0 &&
+  isImageEditingRequest(imagePrompt, messages)
 
 if (
   assessmentPrompt === null &&
@@ -3800,6 +3863,18 @@ if (
 ) {
   // Development mode: no Cloudflare API calls.
   const IMAGE_MOCK_MODE = false
+  const requestedImageCount = getRequestedImageCount(imagePrompt)
+
+if (
+  !Number.isInteger(requestedImageCount) ||
+  requestedImageCount < 1 ||
+  requestedImageCount > 4
+) {
+  setNotice('Please request between 1 and 4 images at a time.')
+  return
+}
+
+setImageGenerationProgress('')
 
   setImageGenerationError('')
 
@@ -3850,15 +3925,53 @@ if (!conversationId) {
   setImageFollowUpMode(false)
 }
 
-const imageBlob = await generateCloudflareImage(imagePrompt)
+let imageBlob = null
+let completedImages = 0
 
-const savedMessage = await saveGeneratedImage(
-  conversationId,
-  imageBlob,
-  imagePrompt
-)
+for (let index = 0; index < requestedImageCount; index++) {
+  setImageGenerationProgress(
+    `Generating image ${index + 1} of ${requestedImageCount}...`
+  )
 
-console.log('Generated Image Saved Response:', savedMessage)
+  const generationPrompt =
+    requestedImageCount === 1
+      ? imagePrompt
+      : `${imagePrompt}
+
+Generate only ONE standalone image.
+This is variation ${index + 1} of ${requestedImageCount}.
+Create a distinct visual variation while respecting the original request.
+Do not create a collage or multiple panels.`
+
+  try {
+    imageBlob = await generateCloudflareImage(generationPrompt)
+
+    const savedMessage = await saveGeneratedImage(
+      conversationId,
+      imageBlob,
+      imagePrompt,
+      index === 0
+    )
+
+    completedImages++
+
+    console.log(
+      `Image ${completedImages} saved successfully:`,
+      savedMessage
+    )
+
+  } catch (error) {
+    if (completedImages > 0) {
+      await openConversation(conversationId)
+    }
+
+    throw new Error(
+      `${completedImages} of ${requestedImageCount} images generated. ${
+        error.message || 'Image generation failed.'
+      }`
+    )
+  }
+}
 
 
 const checkResponse = await fetch(
@@ -3902,13 +4015,16 @@ if (conversationsResponse.ok) {
 
 setInput('')
 setNotice('')
-  } catch (error) {
+    } catch (error) {
     console.error('Image generation failed:', error)
+
     setImageGenerationError(
       error.message || 'Unable to generate image.'
     )
+
   } finally {
     setGeneratingImage(false)
+    setImageGenerationProgress('')
   }
 
   return
@@ -4388,11 +4504,10 @@ if (isImageUpload) {
   )
 
 
-  } else if (
+ } else if (
   filesToSend.length === 0 &&
   content &&
-  /\b(?:change|replace|modify|edit|remove|recolor|make)\b/i.test(content) &&
-  /\b(?:background|colour|color|image|picture|photo)\b/i.test(content)
+  isImageEditInstruction
 ) {
   const imageMessage = [...messages]
     .reverse()
@@ -7759,7 +7874,7 @@ onClick={() => {
             className="image-generation-spinner"
             aria-hidden="true"
           />
-          Enablr AI is generating image...
+          {imageGenerationProgress || 'Enablr AI is generating image...'}
         </p>
       </div>
     </article>

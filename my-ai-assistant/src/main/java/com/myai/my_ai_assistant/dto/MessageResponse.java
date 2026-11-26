@@ -1,7 +1,8 @@
 package com.myai.my_ai_assistant.dto;
 
 import java.time.LocalDateTime;
-
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import com.myai.my_ai_assistant.entity.MessageRole;
 
 public class MessageResponse {
@@ -61,8 +62,10 @@ public class MessageResponse {
         this.content = content;
     }
 
-    public LocalDateTime getCreatedDate() {
-        return createdDate;
+    public OffsetDateTime getCreatedDate() {
+        return createdDate == null
+                ? null
+                : createdDate.atOffset(ZoneOffset.UTC);
     }
 
     public void setCreatedDate(LocalDateTime createdDate) {

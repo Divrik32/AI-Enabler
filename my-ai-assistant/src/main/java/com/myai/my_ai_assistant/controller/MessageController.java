@@ -1139,6 +1139,8 @@ public MessageResponse saveGeneratedImage(
         @PathVariable Long conversationId,
         @RequestParam("file") MultipartFile file,
         @RequestParam("prompt") String prompt,
+        @RequestParam(value = "savePrompt", defaultValue = "true")
+        boolean savePrompt,
         Authentication authentication) {
 
     if (authentication == null || !authentication.isAuthenticated()) {
@@ -1214,10 +1216,13 @@ public MessageResponse saveGeneratedImage(
 String userPrompt = prompt.trim();
 
 // Save the original prompt as a USER message.
-messageService.createUserMessage(
-        conversation,
-        userPrompt
-);
+//Save the user prompt only once for multiple images.
+if (savePrompt || isFirstMessage) {
+ messageService.createUserMessage(
+         conversation,
+         userPrompt
+ );
+}
 
 // Save the generated image as an AI message.
 String imageContent =
