@@ -6093,146 +6093,52 @@ setRenameTitle('')
 
 
 async function deleteChat(conversation) {
-
-
-
-
-
   try {
-
-
-
     const response = await fetch(
-
-
-
       `http://localhost:8080/api/conversations/${conversation.conversationId}`,
-
-
-
       {
-
-
-
         method: 'DELETE',
-
-
-
         headers: {
-
-
-
           Authorization: `Bearer ${auth.token}`,
-
-
-
         },
-
-
-
       }
-
-
-
     )
 
-
-
-
-
-
-
     if (!response.ok) {
-
-
-
       throw new Error(`Failed to delete chat (${response.status})`)
-
-
-
     }
 
+    // Remove deleted conversation from Recent Chats.
+    setConversations((current) =>
+      current.filter(
+        (chat) =>
+          String(chat.conversationId) !==
+          String(conversation.conversationId)
+      )
+    )
 
+    // Close confirmation popup and options menu.
+    setChatModal(null)
+    setOpenChatMenuId(null)
 
-
-
-
-setConversations((current) =>
-  current.filter(
-    (chat) =>
-      String(chat.conversationId) !==
+    // Reset screen only if the active conversation was deleted.
+    if (
+      String(activeConversationIdRef.current) ===
       String(conversation.conversationId)
-  )
-)
+    ) {
+      startNewChat()
 
-
-
-
-
-
-
-    if (activeConversationIdRef.current === conversation.conversationId) {
-
-
-
-      activeConversationIdRef.current = null
-
-
-
-      setActiveConversationId(null)
-
-
-      console.log('CHAT TIMESTAMP DEBUG:', data.map(m => ({
-  id: m.messageId,
-  createdDate: m.createdDate
-})))
-
-
-
-      setMessages([])
-
-
-
-      setInput('')
-
-
-
-      setSelectedFiles([])
-
-
-
-      setMessagesLoading(false)
-
-
-
+      setEditingMessageId(null)
+      setEditedMessageText('')
+      setImageGenerationProgress('')
     }
-
-
-
-
-
-setChatModal(null)
 
     setNotice('Conversation deleted successfully.')
 
-
-
   } catch (error) {
-
-
-
     console.error('Delete chat failed:', error)
-
-
-
     setNotice(error.message || 'Unable to delete conversation.')
-
-
-
   }
-
-
-
 }
 
 
