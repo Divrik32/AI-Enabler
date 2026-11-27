@@ -675,6 +675,9 @@ const [renameTitle, setRenameTitle] = useState('')
   const activeConversationIdRef = useRef(null)
 
 
+  const restoredConversationRef = useRef(false)
+
+
 
   const [messagesLoading, setMessagesLoading] = useState(false)
 
@@ -689,6 +692,42 @@ const [renameTitle, setRenameTitle] = useState('')
 
 
   const [auth, setAuth] = useState(restoreAuthSession)
+
+  // Restore active conversation after page refresh
+useEffect(() => {
+  if (!auth?.token) {
+    restoredConversationRef.current = false
+    return
+  }
+
+  if (restoredConversationRef.current) return
+
+  restoredConversationRef.current = true
+
+  const savedConversationId = sessionStorage.getItem(
+    `enablr-active-chat-${auth.userId}`
+  )
+
+  if (savedConversationId) {
+    void openConversation(Number(savedConversationId))
+  }
+}, [auth?.token])
+
+// Remember currently opened conversation
+useEffect(() => {
+  if (!auth?.token) return
+
+  const storageKey = `enablr-active-chat-${auth.userId}`
+
+  if (activeConversationId !== null) {
+    sessionStorage.setItem(
+      storageKey,
+      String(activeConversationId)
+    )
+  } else if (activeConversationIdRef.current === null) {
+    sessionStorage.removeItem(storageKey)
+  }
+}, [activeConversationId, auth?.token])
 
 
 
@@ -725,6 +764,9 @@ const [editedMessageText, setEditedMessageText] = useState('')
 const [savingEditedMessage, setSavingEditedMessage] = useState(false)
 
 const chatScrollRef = useRef(null)
+
+
+const chatBottomRef = useRef(null)
 
 // Sidebar Hide / Show
 const [isSidebarOpen, setIsSidebarOpen] = useState(
@@ -804,6 +846,47 @@ const [generatedImage, setGeneratedImage] = useState(null)
 const [generatingImage, setGeneratingImage] = useState(false)
 const [imageGenerationProgress, setImageGenerationProgress] = useState('')
 const [imageGenerationError, setImageGenerationError] = useState('')
+
+// Automatically show latest chat message
+useEffect(() => {
+  const messageList = chatScrollRef.current
+  const bottom = chatBottomRef.current
+
+  if (!messageList || !bottom) return
+
+  let frame
+
+  const scrollToLatest = () => {
+    cancelAnimationFrame(frame)
+
+    frame = requestAnimationFrame(() => {
+      bottom.scrollIntoView({
+        behavior: 'instant',
+        block: 'end',
+        inline: 'nearest'
+      })
+    })
+  }
+
+  scrollToLatest()
+
+  const observer = new ResizeObserver(() => {
+    scrollToLatest()
+  })
+
+  observer.observe(messageList)
+
+  messageList.querySelectorAll('.message-row').forEach(row => {
+    observer.observe(row)
+  })
+
+  return () => {
+    observer.disconnect()
+    cancelAnimationFrame(frame)
+  }
+}, [messages, sendingMessage, generatingImage])
+
+  
 
 const [writingJob, setWritingJob] = useState(null)
 
@@ -1437,6 +1520,25 @@ if (!response.ok) {
 }
 
 
+
+
+function getWelcomeGreeting() {
+  const hour = new Date().getHours()
+
+  let greeting = 'Hello'
+
+  if (hour >= 5 && hour < 12) {
+    greeting = 'Good morning'
+  } else if (hour >= 12 && hour < 17) {
+    greeting = 'Good afternoon'
+  } else if (hour >= 17 && hour < 21) {
+    greeting = 'Good evening'
+  }
+
+  const username = String(auth?.username || '').trim()
+
+  return username ? `${greeting}, ${username}` : greeting
+}
 
 function startNewChat() {
   // A conversation is created by sendMessage only when the first message is sent.
@@ -5618,6 +5720,10 @@ async function openAccessibilityConversation(conversationId) {
 
 async function openConversation(conversationId) {
 
+  const isSameConversation =
+  String(activeConversationIdRef.current) === String(conversationId) &&
+  !!chatScrollRef.current
+
 
   setSettingsView(false)
 setHelpView(false)
@@ -5646,11 +5752,10 @@ void loadWritingHistory(conversationId)
 
 
 
+  if (!isSameConversation) {
   setMessages([])
-
-
-
   setMessagesLoading(true)
+}
 
 
 
@@ -6179,6 +6284,12 @@ setSavedAccessibilityScan(null)
 
     try {
       sessionStorage.removeItem(AUTH_STORAGE_KEY)
+
+
+
+      sessionStorage.removeItem(
+  `enablr-active-chat-${auth.userId}`
+)
     } catch (error) {
       console.warn('Unable to clear login session:', error)
     }
@@ -7447,7 +7558,9 @@ onClick={() => {
 />
 
 
-                I am your AI. You can ask me to write, code, plan, or explore any idea.
+                <span className="hero-greeting">
+  {getWelcomeGreeting()}
+</span>
 
 
 
@@ -7727,20 +7840,24 @@ onClick={() => {
 
   
 
-      <button
-        type="button"
-        onClick={() => copyChatMessage(message)}
-        aria-label={`Copy ${message.role?.toLowerCase() === 'user' ? 'your' : 'AI'} message`}
-        title="Copy message"
-        style={{
-          alignSelf: 'flex-start',
-          marginTop: '6px',
-          padding: '4px 10px',
-          cursor: 'pointer'
-        }}
-      >
-        <i className="fa-regular fa-copy" aria-hidden="true" /> Copy
-      </button>
+      {!(message.role?.toLowerCase() !== 'user' &&
+  (String(message.content || '').includes('[Generated image ID:') ||
+    String(message.content || '').includes('/images/generated/'))) && (
+  <button
+    type="button"
+    onClick={() => copyChatMessage(message)}
+    aria-label={`Copy ${message.role?.toLowerCase() === 'user' ? 'your' : 'AI'} message`}
+    title="Copy message"
+    style={{
+      alignSelf: 'flex-start',
+      marginTop: '6px',
+      padding: '4px 10px',
+      cursor: 'pointer'
+    }}
+  >
+    <i className="fa-regular fa-copy" aria-hidden="true" /> Copy
+  </button>
+)}
 
 
       {message.role?.toLowerCase() !== 'user' &&
@@ -7857,6 +7974,12 @@ onClick={() => {
     {imageGenerationError}
   </p>
 )}
+
+<div
+  ref={chatBottomRef}
+  aria-hidden="true"
+  style={{ height: '1px' }}
+/>
 
 </div>
 
